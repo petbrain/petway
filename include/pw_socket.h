@@ -118,11 +118,25 @@ typedef struct {
      * as a name in Linux abstract namespace.
      */
 
+    PwResult (*reuse_addr)(PwValuePtr self, bool reuse);
+    /*
+     * Set or clear SO_REUSEADDR option for socket.
+     */
+
     PwResult (*listen)(PwValuePtr self, int backlog);
     /*
      * Call `listen`, set listen_backlog
      *
      * If backlog is 0, it is set to 5.
+     */
+
+    PwResult (*accept)(PwValuePtr self);
+    /*
+     * Accept incoming connection on listening socket
+     * and return new socket with `remote_addr` initialized
+     * in _PwSocketData structure.
+     *
+     * Return status on error.
      */
 
     PwResult (*connect)(PwValuePtr self, PwValuePtr remote_addr);
@@ -213,9 +227,19 @@ static inline PwResult pw_socket_bind(PwValuePtr sock, PwValuePtr local_addr)
     return pw_interface(sock->type_id, Socket)->bind(sock, local_addr);
 }
 
+static inline PwResult pw_socket_reuse_addr(PwValuePtr sock, bool reuse)
+{
+    return pw_interface(sock->type_id, Socket)->reuse_addr(sock, reuse);
+}
+
 static inline PwResult pw_socket_listen(PwValuePtr sock, int backlog)
 {
     return pw_interface(sock->type_id, Socket)->listen(sock, backlog);
+}
+
+static inline PwResult pw_socket_accept(PwValuePtr sock)
+{
+    return pw_interface(sock->type_id, Socket)->accept(sock);
 }
 
 static inline PwResult pw_socket_connect(PwValuePtr sock, PwValuePtr remote_addr)

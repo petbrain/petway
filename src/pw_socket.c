@@ -176,14 +176,20 @@ static PwResult socket_init(PwValuePtr self, void* ctor_args)
     PwSocketCtorArgs* args = ctor_args;
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
-    sd->sock = socket(args->domain, args->type, args->protocol);
-    if (sd->sock == -1) {
-        return PwErrno(errno);
-    }
+    if (args) {
+        sd->sock = socket(args->domain, args->type, args->protocol);
+        if (sd->sock == -1) {
+            return PwErrno(errno);
+        }
 
-    sd->domain = args->domain;
-    sd->type   = args->type;
-    sd->proto  = args->protocol;
+        sd->domain = args->domain;
+        sd->type   = args->type;
+        sd->proto  = args->protocol;
+
+    } else {
+        // special case for internal use in accept method
+        sd->sock = -1;
+    }
 
     return PwOK();
 }
@@ -402,6 +408,18 @@ static PwResult socket_bind(PwValuePtr self, PwValuePtr local_addr)
     }
 }
 
+static PwResult socket_reuse_addr(PwValuePtr self, bool reuse)
+{
+    _PwSocketData* sd = _pw_socket_data_ptr(self);
+
+    int i = reuse;
+    if (setsockopt(sd->sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i)) < 0) {
+        return PwErrno(errno);
+    } else {
+        return PwOK();
+    }
+}
+
 static PwResult socket_listen(PwValuePtr self, int backlog)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
@@ -415,6 +433,38 @@ static PwResult socket_listen(PwValuePtr self, int backlog)
     } else {
         return PwErrno(errno);
     }
+}
+
+static PwResult socket_accept(PwValuePtr self)
+{
+    // create uninitialized socket
+    PwValue result = pw_create(PwTypeId_Socket);
+    pw_return_if_error(&result);
+
+    // get pointers to socket data structures
+    _PwSocketData* sd_lsnr = _pw_socket_data_ptr(self);
+    _PwSocketData* sd_new  = _pw_socket_data_ptr(&result);
+
+    // initialize addresses for new socket
+    sd_new->local_addr = pw_clone(&sd_lsnr->local_addr);
+    sd_new->remote_addr = pw_create(PwTypeId_SockAddr);
+    pw_return_if_error(&sd_new->remote_addr);
+
+    // get pointer to remote address structure
+    _PwSockAddrData* sa_remote = _pw_sockaddr_data_ptr(&sd_new->remote_addr);
+
+    // call accept and initialize new socket and remote address
+    socklen_t addrlen = sizeof(sa_remote->addr);
+    sd_new->sock = accept(sd_lsnr->sock, (struct sockaddr*) &sa_remote->addr,  &addrlen);
+    if (sd_new->sock < 0) {
+        return PwErrno(errno);
+    }
+    // initialize other fields (they are mainly for informational purposes)
+    sd_new->domain = sd_lsnr->domain;
+    sd_new->type   = sd_lsnr->type;
+    sd_new->proto  = sd_lsnr->proto;
+
+    return pw_move(&result);
 }
 
 static PwResult socket_connect(PwValuePtr self, PwValuePtr remote_addr)
@@ -457,10 +507,12 @@ static PwResult socket_shutdown(PwValuePtr self, int how)
 }
 
 static PwInterface_Socket socket_interface = {
-    .bind     = socket_bind,
-    .listen   = socket_listen,
-    .connect  = socket_connect,
-    .shutdown = socket_shutdown
+    .bind       = socket_bind,
+    .reuse_addr = socket_reuse_addr,
+    .listen     = socket_listen,
+    .accept     = socket_accept,
+    .connect    = socket_connect,
+    .shutdown   = socket_shutdown
 };
 
 /****************************************************************
