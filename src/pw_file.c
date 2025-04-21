@@ -34,8 +34,12 @@ static void file_close(PwValuePtr self);
 static void stop_read_lines(PwValuePtr self);
 
 /****************************************************************
- * Basic interface methods
+ * File type
  */
+
+PwTypeId PwTypeId_File = 0;
+
+static PwType file_type;
 
 static PwResult file_init(PwValuePtr self, void* ctor_args)
 {
@@ -91,16 +95,6 @@ static void file_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inde
         fprintf(fp, " (external)");
     }
     fputc('\n', fp);
-}
-
-static bool file_equal_sametype(PwValuePtr self, PwValuePtr other)
-{
-    return false;
-}
-
-static bool file_equal(PwValuePtr self, PwValuePtr other)
-{
-    return false;
 }
 
 /****************************************************************
@@ -217,6 +211,15 @@ static bool file_set_name(PwValuePtr self, PwValuePtr file_name)
     return true;
 }
 
+static PwInterface_File file_interface = {
+    .open     = file_open,
+    .close    = file_close,
+    .set_fd   = file_set_fd,
+    .get_name = file_get_name,
+    .set_name = file_set_name
+};
+
+
 /****************************************************************
  * Reader interface
  */
@@ -240,6 +243,11 @@ static PwResult file_read(PwValuePtr self, void* buffer, unsigned buffer_size, u
     }
 }
 
+static PwInterface_Reader file_reader_interface = {
+    .read = file_read
+};
+
+
 /****************************************************************
  * Writer interface
  */
@@ -262,6 +270,11 @@ static PwResult file_write(PwValuePtr self, void* data, unsigned size, unsigned*
         return PwOK();
     }
 }
+
+static PwInterface_Writer file_writer_interface = {
+    .write = file_write
+};
+
 
 /****************************************************************
  * LineReader interface methods
@@ -439,28 +452,6 @@ static void stop_read_lines(PwValuePtr self)
     pw_destroy(&f->pushback);
 }
 
-/****************************************************************
- * File type and interfaces
- */
-
-PwTypeId PwTypeId_File = 0;
-
-static PwInterface_File file_interface = {
-    .open     = file_open,
-    .close    = file_close,
-    .set_fd   = file_set_fd,
-    .get_name = file_get_name,
-    .set_name = file_set_name
-};
-
-static PwInterface_Reader file_reader_interface = {
-    .read = file_read
-};
-
-static PwInterface_Writer file_writer_interface = {
-    .write = file_write
-};
-
 static PwInterface_LineReader line_reader_interface = {
     .start             = start_read_lines,
     .read_line         = read_line,
@@ -470,47 +461,35 @@ static PwInterface_LineReader line_reader_interface = {
     .stop              = stop_read_lines
 };
 
-static PwType file_type = {
-    .id             = 0,
-    .ancestor_id    = PwTypeId_Struct,
-    .name           = "File",
-    .allocator      = &default_allocator,
 
-    .create         = _pw_struct_create,
-    .destroy        = _pw_struct_destroy,
-    .clone          = _pw_struct_clone,
-    .hash           = file_hash,
-    .deepcopy       = file_deepcopy,
-    .dump           = file_dump,
-    .to_string      = _pw_struct_to_string,
-    .is_true        = _pw_struct_is_true,
-    .equal_sametype = file_equal_sametype,
-    .equal          = file_equal,
-
-    .data_offset    = sizeof(_PwStructData),
-    .data_size      = sizeof(_PwFile),
-
-    .init           = file_init,
-    .fini           = file_fini
-};
-
-// make sure _PwStructData has correct padding
-static_assert((sizeof(_PwStructData) & (alignof(_PwFile) - 1)) == 0);
-
+/****************************************************************
+ * Initialization
+ */
 
 [[ gnu::constructor ]]
-static void init_file_type()
+static void init_globals()
 {
-    // interfaces can be registered by any type in any order
-    if (PwInterfaceId_File       == 0) { PwInterfaceId_File       = pw_register_interface("File",       PwInterface_File); }
+    // interface can be already registered
+    // basically. interfaces can be registered by any type in any order
+    if (PwInterfaceId_File == 0) {
+        PwInterfaceId_File = pw_register_interface("File", PwInterface_File);
+    }
 
-    PwTypeId_File = pw_add_type(
-        &file_type,
-        PwInterfaceId_File,   &file_interface,
-        PwInterfaceId_Reader, &file_reader_interface,
-        PwInterfaceId_Writer, &file_writer_interface,
-        PwInterfaceId_LineReader, &line_reader_interface
-    );
+    if (PwTypeId_File == 0) {
+
+        PwTypeId_File = pw_struct_subtype(
+            &file_type, "File", PwTypeId_Struct, _PwFile,
+            PwInterfaceId_File,   &file_interface,
+            PwInterfaceId_Reader, &file_reader_interface,
+            PwInterfaceId_Writer, &file_writer_interface,
+            PwInterfaceId_LineReader, &line_reader_interface
+        );
+        file_type.hash     = file_hash;
+        file_type.deepcopy = file_deepcopy;
+        file_type.dump     = file_dump;
+        file_type.init     = file_init;
+        file_type.fini     = file_fini;
+    }
 }
 
 /****************************************************************

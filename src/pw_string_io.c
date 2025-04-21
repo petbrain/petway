@@ -41,8 +41,12 @@ PwResult _pw_create_string_io(PwValuePtr str)
 }
 
 /****************************************************************
- * Basic interface methods
+ * StringIO type
  */
+
+PwTypeId PwTypeId_StringIO = 0;
+
+static PwType stringio_type;
 
 static PwResult stringio_init(PwValuePtr self, void* ctor_args)
 {
@@ -68,11 +72,6 @@ static void stringio_fini(PwValuePtr self)
     _PwStringIO* sio = get_data_ptr(self);
     pw_destroy(&sio->line);
     pw_destroy(&sio->pushback);
-}
-
-static PwResult stringio_deepcopy(PwValuePtr self)
-{
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
 }
 
 static void stringio_hash(PwValuePtr self, PwHashContext* ctx)
@@ -138,7 +137,7 @@ static bool stringio_equal(PwValuePtr self, PwValuePtr other)
 }
 
 /****************************************************************
- * LineReader interface methods
+ * LineReader interface
  */
 
 static PwResult start_read_lines(PwValuePtr self)
@@ -210,12 +209,6 @@ static void stop_read_lines(PwValuePtr self)
     pw_destroy(&sio->pushback);
 }
 
-/****************************************************************
- * StringIO type and interfaces
- */
-
-PwTypeId PwTypeId_StringIO = 0;
-
 static PwInterface_LineReader line_reader_interface = {
     .start             = start_read_lines,
     .read_line         = read_line,
@@ -225,39 +218,27 @@ static PwInterface_LineReader line_reader_interface = {
     .stop              = stop_read_lines
 };
 
-static PwType stringio_type = {
-    .id             = 0,
-    .ancestor_id    = PwTypeId_Struct,
-    .name           = "StringIO",
-    .allocator      = &default_allocator,
 
-    .create         = _pw_struct_create,
-    .destroy        = _pw_struct_destroy,
-    .clone          = _pw_struct_clone,
-    .hash           = stringio_hash,
-    .deepcopy       = stringio_deepcopy,
-    .dump           = stringio_dump,
-    .to_string      = stringio_to_string,
-    .is_true        = stringio_is_true,
-    .equal_sametype = stringio_equal_sametype,
-    .equal          = stringio_equal,
-
-    .data_offset    = sizeof(_PwStructData),
-    .data_size      = sizeof(_PwStringIO),
-
-    .init           = stringio_init,
-    .fini           = stringio_fini
-};
-
-// make sure _PwStructData has correct padding
-static_assert((sizeof(_PwStructData) & (alignof(_PwStringIO) - 1)) == 0);
-
+/****************************************************************
+ * Initialization
+ */
 
 [[ gnu::constructor ]]
 static void init_stringio_type()
 {
-    PwTypeId_StringIO = pw_add_type(
-        &stringio_type,
-        PwInterfaceId_LineReader, &line_reader_interface
-    );
+    if (PwTypeId_StringIO == 0) {
+
+        PwTypeId_StringIO = pw_struct_subtype(
+            &stringio_type, "StringIO", PwTypeId_Struct, _PwStringIO,
+            PwInterfaceId_LineReader, &line_reader_interface
+        );
+        stringio_type.hash           = stringio_hash;
+        stringio_type.dump           = stringio_dump;
+        stringio_type.to_string      = stringio_to_string;
+        stringio_type.is_true        = stringio_is_true;
+        stringio_type.equal_sametype = stringio_equal_sametype;
+        stringio_type.equal          = stringio_equal;
+        stringio_type.init           = stringio_init;
+        stringio_type.fini           = stringio_fini;
+    }
 }

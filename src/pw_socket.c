@@ -26,6 +26,8 @@ uint16_t PW_ERROR_PORT_UNSPECIFIED = 0;
 
 PwTypeId PwTypeId_SockAddr = 0;
 
+static PwType sockaddr_type;
+
 static void sockaddr_hash(PwValuePtr self, PwHashContext* ctx)
 {
     _PwSockAddrData* sa = _pw_sockaddr_data_ptr(self);
@@ -115,42 +117,6 @@ static void sockaddr_dump(PwValuePtr self, FILE* fp, int first_indent, int next_
     dump_sockaddr(fp, self);
 }
 
-static bool sockaddr_equal_sametype(PwValuePtr self, PwValuePtr other)
-{
-    // TODO
-    return false;
-}
-
-static bool sockaddr_equal(PwValuePtr self, PwValuePtr other)
-{
-    // TODO
-    return false;
-}
-
-static PwType sockaddr_type = {
-    .id             = 0,
-    .ancestor_id    = PwTypeId_Struct,
-    .name           = "SockAddr",
-    .allocator      = &default_allocator,
-
-    .create         = _pw_struct_create,
-    .destroy        = _pw_struct_destroy,
-    .clone          = _pw_struct_clone,
-    .hash           = sockaddr_hash,
-    .deepcopy       = _pw_struct_deepcopy,
-    .dump           = sockaddr_dump,
-    .to_string      = _pw_struct_to_string,
-    .is_true        = _pw_struct_is_true,
-    .equal_sametype = sockaddr_equal_sametype,
-    .equal          = sockaddr_equal,
-
-    .data_offset    = sizeof(_PwStructData),
-    .data_size      = sizeof(_PwSockAddrData),
-};
-
-// make sure _PwStructData has correct padding
-static_assert((sizeof(_PwStructData) & (alignof(_PwSocketData) - 1)) == 0);
-
 
 /****************************************************************
  * Socket type
@@ -158,18 +124,7 @@ static_assert((sizeof(_PwStructData) & (alignof(_PwSocketData) - 1)) == 0);
 
 PwTypeId PwTypeId_Socket = 0;
 
-static void socket_fini(PwValuePtr self)
-{
-    _PwSocketData* sd = _pw_socket_data_ptr(self);
-
-    if (sd->sock != -1) {
-        close(sd->sock);
-        sd->sock = -1;
-    }
-
-    pw_destroy(&sd->local_addr);
-    pw_destroy(&sd->remote_addr);
-}
+static PwType socket_type;
 
 static PwResult socket_init(PwValuePtr self, void* ctor_args)
 {
@@ -194,9 +149,17 @@ static PwResult socket_init(PwValuePtr self, void* ctor_args)
     return PwOK();
 }
 
-static void socket_hash(PwValuePtr self, PwHashContext* ctx)
+static void socket_fini(PwValuePtr self)
 {
-    pw_panic("Sockets do not support hashing");
+    _PwSocketData* sd = _pw_socket_data_ptr(self);
+
+    if (sd->sock != -1) {
+        close(sd->sock);
+        sd->sock = -1;
+    }
+
+    pw_destroy(&sd->local_addr);
+    pw_destroy(&sd->remote_addr);
 }
 
 static void socket_dump(PwValuePtr self, FILE* fp, int first_indent, int next_indent, _PwCompoundChain* tail)
@@ -291,43 +254,6 @@ static void socket_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
         dump_sockaddr(fp, &sd->remote_addr);
     }
 }
-
-static bool socket_equal_sametype(PwValuePtr self, PwValuePtr other)
-{
-    return false;
-}
-
-static bool socket_equal(PwValuePtr self, PwValuePtr other)
-{
-    return false;
-}
-
-static PwType socket_type = {
-    .id             = 0,
-    .ancestor_id    = PwTypeId_Struct,
-    .name           = "Socket",
-    .allocator      = &default_allocator,
-
-    .create         = _pw_struct_create,
-    .destroy        = _pw_struct_destroy,
-    .clone          = _pw_struct_clone,
-    .hash           = socket_hash,
-    .deepcopy       = _pw_struct_deepcopy,
-    .dump           = socket_dump,
-    .to_string      = _pw_struct_to_string,
-    .is_true        = _pw_struct_is_true,
-    .equal_sametype = socket_equal_sametype,
-    .equal          = socket_equal,
-
-    .data_offset    = sizeof(_PwStructData),
-    .data_size      = sizeof(_PwSocketData),
-
-    .init           = socket_init,
-    .fini           = socket_fini
-};
-
-// make sure _PwStructData has correct padding
-static_assert((sizeof(_PwStructData) & (alignof(_PwSocketData) - 1)) == 0);
 
 
 /****************************************************************
@@ -568,6 +494,12 @@ static PwInterface_Writer socket_writer_interface = {
 [[ gnu::constructor ]]
 static void init_globals()
 {
+    // interface can be already registered
+    // basically. interfaces can be registered by any type in any order
+    if (PwInterfaceId_Socket == 0) {
+        PwInterfaceId_Socket = pw_register_interface("Socket", PwInterface_Socket);
+    }
+
     if (PwTypeId_Socket != 0) {
         return;
     }
@@ -583,18 +515,21 @@ static void init_globals()
     PW_ERROR_BAD_NETMASK        = pw_define_status("BAD_NETMASK");
     PW_ERROR_PORT_UNSPECIFIED   = pw_define_status("PORT_UNSPECIFIED");
 
-    // init socket type
+    // init types
 
-    if (PwInterfaceId_Socket == 0) {
-        PwInterfaceId_Socket = pw_register_interface("Socket", PwInterface_Socket);
-    }
+    PwTypeId_SockAddr = pw_struct_subtype(
+        &sockaddr_type, "SockAddr", PwTypeId_Struct, _PwSockAddrData
+    );
+    sockaddr_type.hash = sockaddr_hash;
+    sockaddr_type.dump = sockaddr_dump;
 
-    PwTypeId_SockAddr = pw_add_type(&sockaddr_type);
-
-    PwTypeId_Socket = pw_add_type(
-        &socket_type,
+    PwTypeId_Socket = pw_struct_subtype(
+        &socket_type, "Socket", PwTypeId_Struct, _PwSocketData,
         PwInterfaceId_Socket, &socket_interface,
         PwInterfaceId_Reader, &socket_reader_interface,
         PwInterfaceId_Writer, &socket_writer_interface
     );
+    socket_type.dump = socket_dump;
+    socket_type.init = socket_init;
+    socket_type.fini = socket_fini;
 }
