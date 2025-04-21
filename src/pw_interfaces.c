@@ -24,7 +24,7 @@ void _pw_panic_no_interface(PwTypeId type_id, unsigned interface_id)
 }
 
 #define MAX_INTERFACES  (UINT_MAX - 1)  // UINT_MAX equals to -1 which is used as terminator
-                                        // in pw_add_type and pw_subtype, that's why UINT_MAX - 1
+                                        // in pw_add_type and pw_[struct_]subtype, that's why UINT_MAX - 1
 
 [[ gnu::constructor ]]
 void _pw_init_interfaces()

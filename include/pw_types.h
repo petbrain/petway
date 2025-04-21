@@ -406,11 +406,20 @@ PwTypeId _pw_add_type(PwType* type, ...);
 PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id,
                      unsigned data_size, unsigned alignment, ...);
 
-#define pw_subtype(type, name, ancestor_id, data_type, ...)  \
+#define pw_subtype(type, name, ancestor_id, ...)  \
+    _pw_subtype((type), (name), (ancestor_id), 0, 0 __VA_OPT__(,) __VA_ARGS__, -1)
+
+#define pw_struct_subtype(type, name, ancestor_id, data_type, ...)  \
     _pw_subtype((type), (name), (ancestor_id), \
                 sizeof(data_type), alignof(data_type) __VA_OPT__(,) __VA_ARGS__, -1)
 /*
  * `type` and `name` should point to a static storage.
+ *
+ * `pw_subtype` creates subtype with no associated data.
+ * This can also be used to create a subtype of Struct that does not extend
+ * ancestor's structure.
+ *
+ * `pw_struct_subtype` creates subtype with additional data.
  *
  * Variadic arguments are interfaces to override.
  * They are pairs of interface id and interface pointer

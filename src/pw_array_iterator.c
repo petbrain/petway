@@ -146,7 +146,7 @@ PwTypeId PwTypeId_ArrayIterator = 0;
 static void init_array_iterator_type()
 {
     if (PwTypeId_ArrayIterator == 0) {
-        PwTypeId_ArrayIterator = pw_subtype(
+        PwTypeId_ArrayIterator = pw_struct_subtype(
             &array_iterator_type, "ArrayIterator", PwTypeId_Iterator, _PwArrayIterator,
             PwInterfaceId_LineReader, &line_reader_interface
         );
