@@ -87,6 +87,7 @@ static inline int      pw_file_get_fd  (PwValuePtr file)         { return pw_int
 static inline bool     pw_file_set_fd  (PwValuePtr file, int fd) { return pw_interface(file->type_id, File)->set_fd(file, fd); }
 static inline PwResult pw_file_get_name(PwValuePtr file)         { return pw_interface(file->type_id, File)->get_name(file); }
 static inline bool     pw_file_set_name(PwValuePtr file, PwValuePtr file_name)  { return pw_interface(file->type_id, File)->set_name(file, file_name); }
+static inline PwResult pw_file_set_nonblocking(PwValuePtr file, bool mode) { return pw_interface(file->type_id, File)->set_nonblocking(file, mode); }
 
 
 /****************************************************************
