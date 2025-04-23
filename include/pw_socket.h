@@ -141,6 +141,9 @@ typedef struct {
      * and return new socket with `remote_addr` initialized
      * in _PwSocketData structure.
      *
+     * The type of returned socket is same as self,
+     * which means that AsyncSocket is returned if self is AsyncSocket.
+     *
      * Return status on error.
      */
 

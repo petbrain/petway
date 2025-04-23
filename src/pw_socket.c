@@ -381,7 +381,7 @@ static PwResult socket_listen(PwValuePtr self, int backlog)
 static PwResult socket_accept(PwValuePtr self)
 {
     // create uninitialized socket
-    PwValue result = pw_create(PwTypeId_Socket);
+    PwValue result = pw_create(self->type_id);
     pw_return_if_error(&result);
 
     // get pointers to socket data structures
