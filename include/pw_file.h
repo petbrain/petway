@@ -37,27 +37,60 @@ extern PwTypeId PwTypeId_File;
 
 extern unsigned PwInterfaceId_File;
 
-typedef PwResult (*PwMethodOpenFile)         (PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode);
-typedef void     (*PwMethodCloseFile)        (PwValuePtr self);
-typedef int      (*PwMethodGetFileDescriptor)(PwValuePtr self);
-typedef bool     (*PwMethodSetFileDescriptor)(PwValuePtr self, int fd);
-typedef PwResult (*PwMethodGetFileName)      (PwValuePtr self);
-typedef bool     (*PwMethodSetFileName)      (PwValuePtr self, PwValuePtr file_name);
-
-// XXX other fd operation: seek, tell, etc.
-
 typedef struct {
-    PwMethodOpenFile          open;
-    PwMethodCloseFile         close;  // only if opened with `open`, don't close one assigned by `set_fd`, right?
-    PwMethodGetFileDescriptor get_fd;
-    PwMethodSetFileDescriptor set_fd;
-    PwMethodGetFileName       get_name;
-    PwMethodSetFileName       set_name;
+    PwResult (*open)(PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode);
+    /*
+     * Open or create file with `open` function from standard C library.
+     * `mode` is unused when file is not created
+     *
+     * Return status.
+     */
+
+    void (*close)(PwValuePtr self);
+    /*
+     * Close file only if opened with `open` method.
+     * File is not closed if fd was set by `set_fd` method.
+     */
+
+    int (*get_fd)(PwValuePtr self);
+    /*
+     * Returns file descriptor or -1.
+     */
+
+    PwResult (*set_fd)(PwValuePtr self, int fd);
+    /*
+     * Set file descriptor obtained elsewhere.
+     * Return status.
+     */
+
+    PwResult (*get_name)(PwValuePtr self);
+    /*
+     * Get file name.
+     */
+
+    PwResult (*set_name)(PwValuePtr self, PwValuePtr file_name);
+    /*
+     * Set file name.
+     * This works only if file descriptor was set with `set_fd` method.
+     * Return status.
+     */
 
     PwResult (*set_nonblocking)(PwValuePtr self, bool mode);
     /*
      * Set/reset nonblocking mode for file descriptor.
      */
+
+    PwResult (*seek)(PwValuePtr self, off_t offset, int whence);
+    /*
+     * Return position or error.
+     */
+
+    PwResult (*tell)(PwValuePtr self);
+    /*
+     * Return position or error.
+     */
+
+    // TODO truncate, etc.
 
 } PwInterface_File;
 
@@ -84,10 +117,12 @@ static inline PwResult _pw_file_open_u8_wrapper(char* file_name, int flags, mode
 
 static inline void     pw_file_close   (PwValuePtr file)         { pw_interface(file->type_id, File)->close(file); }
 static inline int      pw_file_get_fd  (PwValuePtr file)         { return pw_interface(file->type_id, File)->get_fd(file); }
-static inline bool     pw_file_set_fd  (PwValuePtr file, int fd) { return pw_interface(file->type_id, File)->set_fd(file, fd); }
+static inline PwResult pw_file_set_fd  (PwValuePtr file, int fd) { return pw_interface(file->type_id, File)->set_fd(file, fd); }
 static inline PwResult pw_file_get_name(PwValuePtr file)         { return pw_interface(file->type_id, File)->get_name(file); }
-static inline bool     pw_file_set_name(PwValuePtr file, PwValuePtr file_name)  { return pw_interface(file->type_id, File)->set_name(file, file_name); }
-static inline PwResult pw_file_set_nonblocking(PwValuePtr file, bool mode) { return pw_interface(file->type_id, File)->set_nonblocking(file, mode); }
+static inline PwResult pw_file_set_name(PwValuePtr file, PwValuePtr file_name)     { return pw_interface(file->type_id, File)->set_name(file, file_name); }
+static inline PwResult pw_file_set_nonblocking(PwValuePtr file, bool mode)         { return pw_interface(file->type_id, File)->set_nonblocking(file, mode); }
+static inline PwResult pw_file_seek    (PwValuePtr file, off_t offset, int whence) { return pw_interface(file->type_id, File)->seek(file, offset, whence); }
+static inline PwResult pw_file_tell    (PwValuePtr file)         { return pw_interface(file->type_id, File)->tell(file); }
 
 
 /****************************************************************

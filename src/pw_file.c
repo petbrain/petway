@@ -156,8 +156,6 @@ static PwResult file_open(PwValuePtr self, PwValuePtr file_name, int flags, mode
 
 static void file_close(PwValuePtr self)
 {
-    // XXX check if iteration is in progress
-
     _PwFile* f = get_data_ptr(self);
 
     stop_read_lines(self);
@@ -175,21 +173,22 @@ static int file_get_fd(PwValuePtr self)
     return get_data_ptr(self)->fd;
 }
 
-static bool file_set_fd(PwValuePtr self, int fd)
+static PwResult file_set_fd(PwValuePtr self, int fd)
 {
     _PwFile* f = get_data_ptr(self);
 
-    // XXX check if iteration is in progress
-
+    if (f->buffer) {
+        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    }
     if (f->fd != -1) {
         // fd already set
-        return false;
+        return PwError(PW_ERROR_FD_ALREADY_SET);
     }
     f->fd = fd;
     f->is_external_fd = true;
     f->line_number = 0;
     pw_destroy(&f->pushback);
-    return true;
+    return PwOK();
 }
 
 static PwResult file_get_name(PwValuePtr self)
@@ -198,22 +197,24 @@ static PwResult file_get_name(PwValuePtr self)
     return pw_clone(&f->name);
 }
 
-static bool file_set_name(PwValuePtr self, PwValuePtr file_name)
+static PwResult file_set_name(PwValuePtr self, PwValuePtr file_name)
 {
     _PwFile* f = get_data_ptr(self);
 
-    // XXX check if iteration is in progress
+    if (f->buffer) {
+        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    }
 
     if (f->fd != -1 && !f->is_external_fd) {
         // not an externally set fd
-        return false;
+        return PwError(PW_ERROR_CANT_SET_FILENAME);
     }
 
     // set file name
     pw_destroy(&f->name);
     f->name = pw_clone(file_name);
 
-    return true;
+    return PwOK();
 }
 
 static PwResult file_set_nonblocking(PwValuePtr self, bool mode)
@@ -236,6 +237,28 @@ static PwResult file_set_nonblocking(PwValuePtr self, bool mode)
     }
 }
 
+static PwResult file_seek(PwValuePtr self, off_t offset, int whence)
+{
+    _PwFile* f = get_data_ptr(self);
+
+    off_t pos = lseek(f->fd, offset, whence);
+    if (pos == -1) {
+        return PwErrno(errno);
+    }
+    return PwSigned(pos);
+}
+
+static PwResult file_tell(PwValuePtr self)
+{
+    _PwFile* f = get_data_ptr(self);
+
+    off_t pos = lseek(f->fd, 0, SEEK_CUR);
+    if (pos == -1) {
+        return PwErrno(errno);
+    }
+    return PwSigned(pos);
+}
+
 static PwInterface_File file_interface = {
     .open     = file_open,
     .close    = file_close,
@@ -243,7 +266,9 @@ static PwInterface_File file_interface = {
     .set_fd   = file_set_fd,
     .get_name = file_get_name,
     .set_name = file_set_name,
-    .set_nonblocking = file_set_nonblocking
+    .set_nonblocking = file_set_nonblocking,
+    .seek     = file_seek,
+    .tell     = file_tell
 };
 
 
@@ -251,11 +276,9 @@ static PwInterface_File file_interface = {
  * Reader interface
  */
 
-static PwResult file_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
+static PwResult do_file_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
 {
     _PwFile* f = get_data_ptr(self);
-
-    // XXX check if iteration is in progress
 
     ssize_t result;
     do {
@@ -268,6 +291,14 @@ static PwResult file_read(PwValuePtr self, void* buffer, unsigned buffer_size, u
         *bytes_read = (unsigned) result;
         return PwOK();
     }
+}
+
+static PwResult file_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
+{
+    if (get_data_ptr(self)->buffer) {
+        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    }
+    return do_file_read(self, buffer, buffer_size, bytes_read);
 }
 
 static PwInterface_Reader file_reader_interface = {
@@ -283,7 +314,9 @@ static PwResult file_write(PwValuePtr self, void* data, unsigned size, unsigned*
 {
     _PwFile* f = get_data_ptr(self);
 
-    // XXX check if iteration is in progress
+    if (f->buffer) {
+        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    }
 
     ssize_t result;
     do {
@@ -325,10 +358,6 @@ static PwResult start_read_lines(PwValuePtr self)
     f->position = LINE_READER_BUFFER_SIZE;
     f->data_size = LINE_READER_BUFFER_SIZE;
 
-    // reset file position
-    if (lseek(f->fd, 0, SEEK_SET) == -1) {
-        return PwErrno(errno);
-    }
     f->line_number = 0;
     return PwOK();
 }
@@ -367,7 +396,7 @@ static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
 
             // read next chunk of file
             {
-                pw_expect_ok( file_read(self, f->buffer, LINE_READER_BUFFER_SIZE, &f->data_size) );
+                pw_expect_ok( do_file_read(self, f->buffer, LINE_READER_BUFFER_SIZE, &f->data_size) );
                 if (f->data_size == 0) {
                     return PwError(PW_ERROR_EOF);
                 }

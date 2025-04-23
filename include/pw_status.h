@@ -31,11 +31,13 @@ extern "C" {
 
 // File errors
 #define PW_ERROR_FILE_ALREADY_OPENED  16
-#define PW_ERROR_FILE_CLOSED          17
-#define PW_ERROR_NOT_REGULAR_FILE     18
+#define PW_ERROR_FD_ALREADY_SET       17
+#define PW_ERROR_CANT_SET_FILENAME    18
+#define PW_ERROR_FILE_CLOSED          19
+#define PW_ERROR_NOT_REGULAR_FILE     20
 
 // StringIO errors
-#define PW_ERROR_UNREAD_FAILED        19
+#define PW_ERROR_UNREAD_FAILED        21
 
 uint16_t pw_define_status(char* status);
 /*
