@@ -211,12 +211,33 @@ static bool file_set_name(PwValuePtr self, PwValuePtr file_name)
     return true;
 }
 
+static PwResult file_set_nonblocking(PwValuePtr self, bool mode)
+{
+    _PwFile* f = get_data_ptr(self);
+
+    if (f->fd == -1) {
+        return PwError(PW_ERROR_FILE_CLOSED);
+    }
+    int flags = fcntl(f->fd, F_GETFL, 0);
+    if (mode) {
+        flags |= O_NONBLOCK;
+    } else {
+        flags &= ~O_NONBLOCK;
+    }
+    if (fcntl(f->fd, F_SETFL, flags) == -1) {
+        return PwErrno(errno);
+    } else {
+        return PwOK();
+    }
+}
+
 static PwInterface_File file_interface = {
     .open     = file_open,
     .close    = file_close,
     .set_fd   = file_set_fd,
     .get_name = file_get_name,
-    .set_name = file_set_name
+    .set_name = file_set_name,
+    .set_nonblocking = file_set_nonblocking
 };
 
 

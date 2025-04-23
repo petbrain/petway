@@ -52,6 +52,11 @@ typedef struct {
     PwMethodGetFileName       get_name;
     PwMethodSetFileName       set_name;
 
+    PwResult (*set_nonblocking)(PwValuePtr self, bool mode);
+    /*
+     * Set/reset nonblocking mode for file descriptor.
+     */
+
 } PwInterface_File;
 
 /****************************************************************
