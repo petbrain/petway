@@ -346,6 +346,23 @@ static PwResult socket_reuse_addr(PwValuePtr self, bool reuse)
     }
 }
 
+static PwResult socket_set_nonblocking(PwValuePtr self, bool mode)
+{
+    _PwSocketData* sd = _pw_socket_data_ptr(self);
+
+    int flags = fcntl(sd->sock, F_GETFL, 0);
+    if (mode) {
+        flags |= O_NONBLOCK;
+    } else {
+        flags &= ~O_NONBLOCK;
+    }
+    if (fcntl(sd->sock, F_SETFL, flags) == -1) {
+        return PwErrno(errno);
+    } else {
+        return PwOK();
+    }
+}
+
 static PwResult socket_listen(PwValuePtr self, int backlog)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
@@ -435,6 +452,7 @@ static PwResult socket_shutdown(PwValuePtr self, int how)
 static PwInterface_Socket socket_interface = {
     .bind       = socket_bind,
     .reuse_addr = socket_reuse_addr,
+    .set_nonblocking = socket_set_nonblocking,
     .listen     = socket_listen,
     .accept     = socket_accept,
     .connect    = socket_connect,

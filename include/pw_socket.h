@@ -123,6 +123,11 @@ typedef struct {
      * Set or clear SO_REUSEADDR option for socket.
      */
 
+    PwResult (*set_nonblocking)(PwValuePtr self, bool mode);
+    /*
+     * Set/reset nonblocking mode for socket.
+     */
+
     PwResult (*listen)(PwValuePtr self, int backlog);
     /*
      * Call `listen`, set listen_backlog
@@ -230,6 +235,11 @@ static inline PwResult pw_socket_bind(PwValuePtr sock, PwValuePtr local_addr)
 static inline PwResult pw_socket_reuse_addr(PwValuePtr sock, bool reuse)
 {
     return pw_interface(sock->type_id, Socket)->reuse_addr(sock, reuse);
+}
+
+static inline PwResult pw_socket_set_nonblocking(PwValuePtr sock, bool mode)
+{
+    return pw_interface(sock->type_id, Socket)->set_nonblocking(sock, mode);
 }
 
 static inline PwResult pw_socket_listen(PwValuePtr sock, int backlog)
