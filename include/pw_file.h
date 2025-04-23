@@ -39,6 +39,7 @@ extern unsigned PwInterfaceId_File;
 
 typedef PwResult (*PwMethodOpenFile)         (PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode);
 typedef void     (*PwMethodCloseFile)        (PwValuePtr self);
+typedef int      (*PwMethodGetFileDescriptor)(PwValuePtr self);
 typedef bool     (*PwMethodSetFileDescriptor)(PwValuePtr self, int fd);
 typedef PwResult (*PwMethodGetFileName)      (PwValuePtr self);
 typedef bool     (*PwMethodSetFileName)      (PwValuePtr self, PwValuePtr file_name);
@@ -48,6 +49,7 @@ typedef bool     (*PwMethodSetFileName)      (PwValuePtr self, PwValuePtr file_n
 typedef struct {
     PwMethodOpenFile          open;
     PwMethodCloseFile         close;  // only if opened with `open`, don't close one assigned by `set_fd`, right?
+    PwMethodGetFileDescriptor get_fd;
     PwMethodSetFileDescriptor set_fd;
     PwMethodGetFileName       get_name;
     PwMethodSetFileName       set_name;
@@ -81,6 +83,7 @@ static inline PwResult _pw_file_open_u8_wrapper(char* file_name, int flags, mode
 }
 
 static inline void     pw_file_close   (PwValuePtr file)         { pw_interface(file->type_id, File)->close(file); }
+static inline int      pw_file_get_fd  (PwValuePtr file)         { return pw_interface(file->type_id, File)->get_fd(file); }
 static inline bool     pw_file_set_fd  (PwValuePtr file, int fd) { return pw_interface(file->type_id, File)->set_fd(file, fd); }
 static inline PwResult pw_file_get_name(PwValuePtr file)         { return pw_interface(file->type_id, File)->get_name(file); }
 static inline bool     pw_file_set_name(PwValuePtr file, PwValuePtr file_name)  { return pw_interface(file->type_id, File)->set_name(file, file_name); }

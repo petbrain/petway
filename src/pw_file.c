@@ -170,6 +170,11 @@ static void file_close(PwValuePtr self)
     pw_destroy(&f->name);
 }
 
+static int file_get_fd(PwValuePtr self)
+{
+    return get_data_ptr(self)->fd;
+}
+
 static bool file_set_fd(PwValuePtr self, int fd)
 {
     _PwFile* f = get_data_ptr(self);
@@ -234,6 +239,7 @@ static PwResult file_set_nonblocking(PwValuePtr self, bool mode)
 static PwInterface_File file_interface = {
     .open     = file_open,
     .close    = file_close,
+    .get_fd   = file_get_fd,
     .set_fd   = file_set_fd,
     .get_name = file_get_name,
     .set_name = file_set_name,
