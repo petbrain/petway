@@ -13,6 +13,7 @@
 typedef struct {
     int fd;               // file descriptor
     bool is_external_fd;  // fd is set by `set_fd` and should not be closed
+    bool own_fd;          // fd is owned
     int error;            // errno, set by `open`
     _PwValue name;
 
@@ -92,7 +93,11 @@ static void file_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inde
     }
     fprintf(fp, " fd: %d", f->fd);
     if (f->is_external_fd) {
-        fprintf(fp, " (external)");
+        char* owned = "";
+        if (f->own_fd) {
+            owned = ",owned";
+        }
+        fprintf(fp, " (external%s)", owned);
     }
     fputc('\n', fp);
 }
@@ -147,9 +152,7 @@ static PwResult file_open(PwValuePtr self, PwValuePtr file_name, int flags, mode
     f->name = pw_clone(file_name);
 
     f->is_external_fd = false;
-    f->line_number = 0;
-
-    pw_destroy(&f->pushback);
+    f->own_fd = true;
 
     return PwOK();
 }
@@ -160,7 +163,7 @@ static void file_close(PwValuePtr self)
 
     stop_read_lines(self);
 
-    if (f->fd != -1 && !f->is_external_fd) {
+    if (f->fd != -1 && f->own_fd) {
         close(f->fd);
     }
     f->fd = -1;
@@ -173,7 +176,7 @@ static int file_get_fd(PwValuePtr self)
     return get_data_ptr(self)->fd;
 }
 
-static PwResult file_set_fd(PwValuePtr self, int fd)
+static PwResult file_set_fd(PwValuePtr self, int fd, bool move)
 {
     _PwFile* f = get_data_ptr(self);
 
@@ -186,8 +189,7 @@ static PwResult file_set_fd(PwValuePtr self, int fd)
     }
     f->fd = fd;
     f->is_external_fd = true;
-    f->line_number = 0;
-    pw_destroy(&f->pushback);
+    f->own_fd = move;
     return PwOK();
 }
 

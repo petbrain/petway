@@ -48,8 +48,7 @@ typedef struct {
 
     void (*close)(PwValuePtr self);
     /*
-     * Close file only if opened with `open` method.
-     * File is not closed if fd was set by `set_fd` method.
+     * Close file if was opened with `open` method or set with ownership transfer.
      */
 
     int (*get_fd)(PwValuePtr self);
@@ -57,9 +56,10 @@ typedef struct {
      * Returns file descriptor or -1.
      */
 
-    PwResult (*set_fd)(PwValuePtr self, int fd);
+    PwResult (*set_fd)(PwValuePtr self, int fd, bool move);
     /*
      * Set file descriptor obtained elsewhere.
+     * If `move` is true, File takes the ownership and fd will be closed by `close` method.
      * Return status.
      */
 
@@ -115,14 +115,14 @@ static inline PwResult _pw_file_open_u8_wrapper(char* file_name, int flags, mode
     return _pw_file_open_u8((char8_t*) file_name, flags, mode);
 }
 
-static inline void     pw_file_close   (PwValuePtr file)         { pw_interface(file->type_id, File)->close(file); }
-static inline int      pw_file_get_fd  (PwValuePtr file)         { return pw_interface(file->type_id, File)->get_fd(file); }
-static inline PwResult pw_file_set_fd  (PwValuePtr file, int fd) { return pw_interface(file->type_id, File)->set_fd(file, fd); }
-static inline PwResult pw_file_get_name(PwValuePtr file)         { return pw_interface(file->type_id, File)->get_name(file); }
+static inline void     pw_file_close   (PwValuePtr file) { pw_interface(file->type_id, File)->close(file); }
+static inline int      pw_file_get_fd  (PwValuePtr file) { return pw_interface(file->type_id, File)->get_fd(file); }
+static inline PwResult pw_file_get_name(PwValuePtr file) { return pw_interface(file->type_id, File)->get_name(file); }
+static inline PwResult pw_file_set_fd  (PwValuePtr file, int fd, bool move)        { return pw_interface(file->type_id, File)->set_fd(file, fd, move); }
 static inline PwResult pw_file_set_name(PwValuePtr file, PwValuePtr file_name)     { return pw_interface(file->type_id, File)->set_name(file, file_name); }
 static inline PwResult pw_file_set_nonblocking(PwValuePtr file, bool mode)         { return pw_interface(file->type_id, File)->set_nonblocking(file, mode); }
 static inline PwResult pw_file_seek    (PwValuePtr file, off_t offset, int whence) { return pw_interface(file->type_id, File)->seek(file, offset, whence); }
-static inline PwResult pw_file_tell    (PwValuePtr file)         { return pw_interface(file->type_id, File)->tell(file); }
+static inline PwResult pw_file_tell    (PwValuePtr file) { return pw_interface(file->type_id, File)->tell(file); }
 
 
 /****************************************************************
