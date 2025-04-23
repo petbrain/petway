@@ -8,36 +8,37 @@
 extern "C" {
 #endif
 
-#define PW_SUCCESS                     0
-#define PW_STATUS_VA_END               1  // used as a terminator for variadic arguments
-#define PW_ERROR_ERRNO                 2
-#define PW_ERROR_OOM                   3
-#define PW_ERROR_NOT_IMPLEMENTED       4
-#define PW_ERROR_INCOMPATIBLE_TYPE     5
-#define PW_ERROR_EOF                   6
-#define PW_ERROR_DATA_SIZE_TOO_BIG     7
-#define PW_ERROR_INDEX_OUT_OF_RANGE    8
-#define PW_ERROR_ITERATION_IN_PROGRESS 9
-#define PW_ERROR_BAD_NUMBER           10
-#define PW_ERROR_BAD_DATETIME         11
-#define PW_ERROR_BAD_TIMESTAMP        12
-#define PW_ERROR_NUMERIC_OVERFLOW     13
+#define PW_SUCCESS                      0
+#define PW_STATUS_VA_END                1  // used as a terminator for variadic arguments
+#define PW_ERROR_ERRNO                  2
+#define PW_ERROR_OOM                    3
+#define PW_ERROR_NOT_IMPLEMENTED        4
+#define PW_ERROR_INCOMPATIBLE_TYPE      5
+#define PW_ERROR_EOF                    6
+#define PW_ERROR_TIMEOUT                7
+#define PW_ERROR_DATA_SIZE_TOO_BIG      8
+#define PW_ERROR_INDEX_OUT_OF_RANGE     9
+#define PW_ERROR_ITERATION_IN_PROGRESS 10
+#define PW_ERROR_BAD_NUMBER            11
+#define PW_ERROR_BAD_DATETIME          12
+#define PW_ERROR_BAD_TIMESTAMP         13
+#define PW_ERROR_NUMERIC_OVERFLOW      14
 
 // array errors
-#define PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY  14
+#define PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY  15
 
 // map errors
-#define PW_ERROR_KEY_NOT_FOUND        15
+#define PW_ERROR_KEY_NOT_FOUND        16
 
 // File errors
-#define PW_ERROR_FILE_ALREADY_OPENED  16
-#define PW_ERROR_FD_ALREADY_SET       17
-#define PW_ERROR_CANT_SET_FILENAME    18
-#define PW_ERROR_FILE_CLOSED          19
-#define PW_ERROR_NOT_REGULAR_FILE     20
+#define PW_ERROR_FILE_ALREADY_OPENED  17
+#define PW_ERROR_FD_ALREADY_SET       18
+#define PW_ERROR_CANT_SET_FILENAME    19
+#define PW_ERROR_FILE_CLOSED          20
+#define PW_ERROR_NOT_REGULAR_FILE     21
 
 // StringIO errors
-#define PW_ERROR_UNREAD_FAILED        21
+#define PW_ERROR_UNREAD_FAILED        22
 
 uint16_t pw_define_status(char* status);
 /*
@@ -93,6 +94,17 @@ static inline bool pw_eof(PwValuePtr status)
         return false;
     }
     return status->status_code == PW_ERROR_EOF;
+}
+
+static inline bool pw_timeout(PwValuePtr status)
+{
+    if (!status) {
+        return false;
+    }
+    if (!pw_is_status(status)) {
+        return false;
+    }
+    return status->status_code == PW_ERROR_TIMEOUT;
 }
 
 static inline bool pw_va_end(PwValuePtr status)
