@@ -1188,6 +1188,16 @@ void test_json()
         PwString_1_12(8, 'd', 'a', 'z', ' ', 'g', 'o', 'o', 'd', 0,0,0,0)
     );
     {
+        // test pw_get
+
+        PwValue v = pw_get(&value, "3", "list", "-1", "three", "1");
+        pw_dump(stderr, &v);
+        TEST(pw_equal(&v, 2));
+
+        PwValue v2 = pw_get(&value, "0", "that");
+        TEST(pw_error(&v2));
+    }
+    {
         PwValue result = pw_to_json(&value, 0);
         PwValue reference = pw_create_string(
             "[\"this\",\"is\",\"a\",{\"number\":1,\"list\":[\"one\",\"two\",{\"three\":[1,2,{\"four\":\"five\\nsix\\n\"}]}]},\"daz good\"]"

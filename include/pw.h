@@ -19,3 +19,18 @@
 #include <pw_string.h>
 #include <pw_file.h>
 #include <pw_string_io.h>
+
+
+/*
+ * Miscellaneous helpers
+ */
+
+#define pw_get(container, ...) _pw_get((container) __VA_OPT__(,) __VA_ARGS__, nullptr)
+PwResult _pw_get(PwValuePtr container, ...);
+/*
+ * Get value from container object.
+ * Variadic arguments are path to value and all must have char* type because
+ * there's no simple way to distinguish types of variadic args.
+ * For maps arguments are used as keys in UTF-8 encoding.
+ * For lists arguments are converted to integer index.
+ */

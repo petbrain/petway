@@ -25,6 +25,7 @@ add_library(petway STATIC
     src/pw_dump.c
     src/pw_file.c
     src/pw_hash.c
+    src/pw_helpers.c
     src/pw_interfaces.c
     src/pw_iterator.c
     src/pw_map.c
