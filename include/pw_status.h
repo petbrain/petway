@@ -59,7 +59,7 @@ char* pw_status_str(uint16_t status_code);
     /* make status with optional description */ \
     ({  \
         __PWDECL_Status(status, (status_code));  \
-        __VA_OPT__( _pw_set_status_desc(status, __VA_ARGS__); )  \
+        __VA_OPT__( _pw_set_status_desc(&status, __VA_ARGS__); )  \
         status;  \
     })
 
@@ -91,8 +91,8 @@ static inline bool pw_error(PwValuePtr status)
 
 #define pw_expect_ok( function_call )  \
     do {  \
-        PwValue status = function_call;  \
-        pw_return_if_error(&status);  \
+        PwValue __status = function_call;  \
+        pw_return_if_error(&__status);  \
     } while (false)
 
 
