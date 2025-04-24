@@ -220,14 +220,14 @@ typedef struct {
  * Shorthand functions
  */
 
-static inline PwResult pw_socket(int domain, int type, int protocol)
+static inline PwResult pw_socket(PwTypeId type_id, int domain, int sock_type, int protocol)
 {
     PwSocketCtorArgs args = {
         .domain   = domain,
-        .type     = type,
+        .type     = sock_type,
         .protocol = protocol
     };
-    return pw_create2(PwTypeId_Socket, &args);
+    return pw_create2(type_id, &args);
 }
 
 static inline PwResult pw_socket_bind(PwValuePtr sock, PwValuePtr local_addr)

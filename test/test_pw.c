@@ -1240,7 +1240,7 @@ void test_json()
 void test_socket()
 {
     {
-        PwValue sock = pw_socket(AF_LOCAL, SOCK_DGRAM, 0);
+        PwValue sock = pw_socket(PwTypeId_Socket, AF_LOCAL, SOCK_DGRAM, 0);
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
         PWDECL_String_1_12(local_addr, 7, 0, 'u', 'w', 't', 'e', 's', 't', 0, 0, 0, 0, 0);
@@ -1249,7 +1249,7 @@ void test_socket()
         TEST(pw_ok(&status));
     }
     {
-        PwValue sock = pw_socket(AF_INET, SOCK_STREAM, 0);
+        PwValue sock = pw_socket(PwTypeId_Socket, AF_INET, SOCK_STREAM, 0);
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
         PwValue local_addr = PwCharPtr("0.0.0.0:23451");
@@ -1258,7 +1258,7 @@ void test_socket()
         TEST(pw_ok(&status));
     }
     {
-        PwValue sock = pw_socket(AF_INET, SOCK_STREAM, 0);
+        PwValue sock = pw_socket(PwTypeId_Socket, AF_INET, SOCK_STREAM, 0);
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
         PwValue local_addr = pw_parse_inet_address("0.0.0.0:23451");
