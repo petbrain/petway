@@ -45,10 +45,11 @@ typedef struct {
  * Reader interface
  */
 
-typedef PwResult (*PwMethodRead)(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read);
-
 typedef struct {
-    PwMethodRead read;
+    PwResult (*read)(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read);
+    /*
+     * Return status.
+     */
 
 } PwInterface_Reader;
 
@@ -57,10 +58,11 @@ typedef struct {
  * Writer interface
  */
 
-typedef PwResult (*PwMethodWrite)(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written);
-
 typedef struct {
-    PwMethodWrite write;
+    PwResult (*write)(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written);
+    /*
+     * Return status.
+     */
 
 } PwInterface_Writer;
 
@@ -69,55 +71,50 @@ typedef struct {
  * LineReader interface
  */
 
-typedef PwResult (*PwMethodStartReadLines)(PwValuePtr self);
-/*
- * Prepare to read lines.
- *
- * Basically, any value that implements LineReader interface
- * must be prepared to read lines without making this call.
- *
- * Calling this method again should reset line reader.
- */
-
-typedef PwResult (*PwMethodReadLine)(PwValuePtr self);
-/*
- * Read next line.
- */
-
-typedef PwResult (*PwMethodReadLineInPlace)(PwValuePtr self, PwValuePtr line);
-/*
- * Truncate line and read next line into it.
- * Return true if read some data, false if error or eof.
- *
- * Rationale: avoid frequent memory allocations that would take place
- * if we returned line by line.
- * On the contrary, existing line is a pre-allocated buffer for the next one.
- */
-
-typedef bool (*PwMethodUnreadLine)(PwValuePtr self, PwValuePtr line);
-/*
- * Push line back to the reader.
- * Only one pushback is guaranteed.
- * Return false if pushback buffer is full.
- */
-
-typedef unsigned (*PwMethodGetLineNumber)(PwValuePtr self);
-/*
- * Return current line number, 1-based.
- */
-
-typedef void (*PwMethodStopReadLines)(PwValuePtr self);
-/*
- * Free internal buffer.
- */
 
 typedef struct {
-    PwMethodStartReadLines  start;
-    PwMethodReadLine        read_line;
-    PwMethodReadLineInPlace read_line_inplace;
-    PwMethodUnreadLine      unread_line;
-    PwMethodGetLineNumber   get_line_number;
-    PwMethodStopReadLines   stop;
+
+    PwResult (*start)(PwValuePtr self);
+    /*
+     * Prepare to read lines.
+     *
+     * Basically, any value that implements LineReader interface
+     * must be prepared to read lines without making this call.
+     *
+     * Calling this method again should reset line reader.
+     */
+
+    PwResult (*read_line)(PwValuePtr self);
+    /*
+     * Read next line.
+     */
+
+    PwResult (*read_line_inplace)(PwValuePtr self, PwValuePtr line);
+    /*
+     * Truncate line and read next line into it.
+     * Return true if read some data, false if error or eof.
+     *
+     * Rationale: avoid frequent memory allocations that would take place
+     * if we returned line by line.
+     * On the contrary, existing line is a pre-allocated buffer for the next one.
+     */
+
+    bool (*unread_line)(PwValuePtr self, PwValuePtr line);
+    /*
+     * Push line back to the reader.
+     * Only one pushback is guaranteed.
+     * Return false if pushback buffer is full.
+     */
+
+    unsigned (*get_line_number)(PwValuePtr self);
+    /*
+     * Return current line number, 1-based.
+     */
+
+    void (*stop)(PwValuePtr self);
+    /*
+     * Free internal buffer.
+     */
 
 } PwInterface_LineReader;
 
