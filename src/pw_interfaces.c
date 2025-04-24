@@ -42,9 +42,10 @@ void _pw_init_interfaces()
 
     // register built-ion interfaces
 
-    pw_assert(PwInterfaceId_Reader     == pw_register_interface("Reader",     PwInterface_Reader));
-    pw_assert(PwInterfaceId_Writer     == pw_register_interface("Writer",     PwInterface_Writer));
-    pw_assert(PwInterfaceId_LineReader == pw_register_interface("LineReader", PwInterface_LineReader));
+    pw_assert(PwInterfaceId_RandomAccess == pw_register_interface("RandomAccess", PwInterface_RandomAccess));
+    pw_assert(PwInterfaceId_Reader       == pw_register_interface("Reader",       PwInterface_Reader));
+    pw_assert(PwInterfaceId_Writer       == pw_register_interface("Writer",       PwInterface_Writer));
+    pw_assert(PwInterfaceId_LineReader   == pw_register_interface("LineReader",   PwInterface_LineReader));
 }
 
 unsigned _pw_register_interface(char* name, unsigned num_methods)

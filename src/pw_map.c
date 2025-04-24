@@ -483,6 +483,15 @@ static bool map_equal(PwValuePtr self, PwValuePtr other)
     }
 }
 
+static PwInterface_RandomAccess random_access_interface;  // forward declaration
+
+static _PwInterface map_interfaces[] = {
+    {
+        .interface_id      = PwInterfaceId_RandomAccess,
+        .interface_methods = (void**) &random_access_interface
+    }
+};
+
 PwType _pw_map_type = {
     .id             = PwTypeId_Map,
     .ancestor_id    = PwTypeId_Compound,
@@ -504,9 +513,10 @@ PwType _pw_map_type = {
     .data_size      = sizeof(_PwMap),
 
     .init           = map_init,
-    .fini           = map_fini
+    .fini           = map_fini,
 
-    // [PwInterfaceId_RandomAccess] = &map_type_random_access_interface
+    .num_interfaces = PW_LENGTH(map_interfaces),
+    .interfaces     = map_interfaces
 };
 
 // make sure _PwCompoundData has correct padding
@@ -675,3 +685,24 @@ bool pw_map_item(PwValuePtr self, unsigned index, PwValuePtr key, PwValuePtr val
         return false;
     }
 }
+
+/****************************************************************
+ * RandomAccess interface
+ */
+
+static PwResult ra_delete_item(PwValuePtr self, PwValuePtr key)
+// XXX: change return type of _pw_map_del instead?
+{
+    if (_pw_map_del(self, key)) {
+        return PwOK();
+    } else {
+        return PwError(PW_ERROR_KEY_NOT_FOUND);
+    }
+}
+
+static PwInterface_RandomAccess random_access_interface = {
+    .length      = pw_map_length,
+    .get_item    = _pw_map_get,
+    .set_item    = pw_map_update,
+    .delete_item = ra_delete_item  // _pw_map_del
+};

@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "include/pw.h"
+#include "include/pw_parse.h"
 #include "src/pw_charptr_internal.h"
 #include "src/pw_array_internal.h"
 #include "src/pw_string_internal.h"
@@ -122,6 +123,16 @@ static bool array_equal(PwValuePtr self, PwValuePtr other)
     }
 }
 
+static PwInterface_RandomAccess random_access_interface;  // forward declaration
+
+static _PwInterface array_interfaces[] = {
+    {
+        .interface_id      = PwInterfaceId_RandomAccess,
+        .interface_methods = (void**) &random_access_interface
+    }
+    // PwInterfaceId_Array
+};
+
 PwType _pw_array_type = {
     .id             = PwTypeId_Array,
     .ancestor_id    = PwTypeId_Compound,
@@ -143,10 +154,10 @@ PwType _pw_array_type = {
     .data_size      = sizeof(_PwArray),
 
     .init           = array_init,
-    .fini           = array_fini
+    .fini           = array_fini,
 
-    // [PwInterfaceId_RandomAccess] = &array_type_random_access_interface,
-    // [PwInterfaceId_Array]        = &array_type_array_interface
+    .num_interfaces = PW_LENGTH(array_interfaces),
+    .interfaces     = array_interfaces
 };
 
 // make sure _PwCompoundData has correct padding
@@ -180,7 +191,7 @@ PwResult _pw_array_create(...)
 
 PwResult _pw_alloc_array(PwTypeId type_id, _PwArray* array_data, unsigned capacity)
 {
-    if (capacity >= (UINT_MAX - PWARRAY_CAPACITY_INCREMENT)) {
+    if (capacity >= UINT_MAX / sizeof(_PwValue)) {
         return PwError(PW_ERROR_DATA_SIZE_TOO_BIG);
     }
 
@@ -216,7 +227,7 @@ PwResult _pw_array_resize(PwTypeId type_id, _PwArray* array_data, unsigned desir
 {
     if (desired_capacity < array_data->length) {
         desired_capacity = array_data->length;
-    } else if (desired_capacity >= (UINT_MAX - PWARRAY_CAPACITY_INCREMENT)) {
+    } else if (desired_capacity >= UINT_MAX / sizeof(_PwValue)) {
         return PwError(PW_ERROR_DATA_SIZE_TOO_BIG);
     }
     unsigned new_capacity = round_capacity(desired_capacity);
@@ -703,3 +714,104 @@ PwResult pw_array_dedent(PwValuePtr lines)
     }
     return PwOK();
 }
+
+
+/****************************************************************
+ * RandomAccess interface
+ */
+
+static PwResult key_to_index(PwValuePtr key)
+/*
+ * Convert key to integer index, either signed or unsigned.
+ */
+{
+    // clone key for two reasons:
+    // 1) it's the result;
+    // 2) convert CharPtr to String
+
+    PwValue k = pw_clone(key);
+
+    if (pw_is_string(&k)) {
+        PwValue index = pw_parse_number(&k);
+        pw_return_if_error(&index);
+        pw_destroy(&k);
+        k = pw_move(&index);
+        // continue with bounds checking
+    }
+
+    // note bounds checking aren't inclusive because:
+    // a) capacity is anyway less by a factor of value size;
+    // b) delete needs index + 1
+
+    if (pw_is_unsigned(&k)) {
+#       if UINT_MAX < PW_UNSIGNED_MAX
+            if (k.unsigned_value < UINT_MAX) {
+                return pw_move(&k);
+            }
+            return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+#       else
+            return pw_move(&k);
+#       endif
+    }
+    if (pw_is_signed(&k)) {
+#       if INT_MAX < PW_SIGNED_MAX
+            if (INT_MIN < k.signed_value && k.signed_value < INT_MAX) {
+                return pw_move(&k);
+            }
+            return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+#       else
+            return pw_move(&k);
+#       endif
+    }
+    return PwError(PW_ERROR_INCOMPATIBLE_TYPE);
+}
+
+static PwResult ra_get_item(PwValuePtr self, PwValuePtr key)
+{
+    PwValue index = key_to_index(key);
+    pw_return_if_error(&index);
+    if (pw_is_unsigned(&index)) {
+        return _pw_array_item(self, index.unsigned_value);
+    } else {
+        return _pw_array_item_signed(self, index.signed_value);
+    }
+}
+
+static PwResult ra_set_item(PwValuePtr self, PwValuePtr key, PwValuePtr value)
+{
+    PwValue index = key_to_index(key);
+    pw_return_if_error(&index);
+    if (pw_is_unsigned(&index)) {
+        return _pw_array_set_item(self, index.unsigned_value, value);
+    } else {
+        return _pw_array_set_item_signed(self, index.signed_value, value);
+    }
+}
+
+static PwResult ra_delete_item(PwValuePtr self, PwValuePtr key)
+{
+    PwValue index = key_to_index(key);
+    pw_return_if_error(&index);
+
+    unsigned i;
+    if (pw_is_unsigned(&index)) {
+        i = index.unsigned_value;
+    } else {
+        if (index.signed_value < 0) {
+            index.signed_value += pw_array_length(self);
+        }
+        if (index.signed_value < 0) {
+            return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+        }
+        i = index.signed_value;
+    }
+    pw_array_del(self, i, i + 1);
+    return PwOK();
+}
+
+static PwInterface_RandomAccess random_access_interface = {
+    .length      = pw_array_length,
+    .get_item    = ra_get_item,
+    .set_item    = ra_set_item,
+    .delete_item = ra_delete_item
+};

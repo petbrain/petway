@@ -20,9 +20,26 @@ typedef struct __PwInterface _PwInterface;
 /*
  * Built-in interfaces
  */
-#define PwInterfaceId_Reader      0
-#define PwInterfaceId_Writer      1
-#define PwInterfaceId_LineReader  2  // iterator interface
+#define PwInterfaceId_RandomAccess  0
+#define PwInterfaceId_Reader        1
+#define PwInterfaceId_Writer        2
+#define PwInterfaceId_LineReader    3  // iterator interface
+
+/****************************************************************
+ * RandomAccess interface
+ *
+ * Methods that accept key argument may convert it
+ * from String or CharPtr to number if items are accessible
+ * by numeric index.
+ */
+
+typedef struct {
+    unsigned (*length)(PwValuePtr self);
+    PwResult (*get_item)(PwValuePtr self, PwValuePtr key);
+    PwResult (*set_item)(PwValuePtr self, PwValuePtr key, PwValuePtr value);
+    PwResult (*delete_item)(PwValuePtr self, PwValuePtr key);
+
+} PwInterface_RandomAccess;
 
 /****************************************************************
  * Reader interface
@@ -115,16 +132,10 @@ typedef struct {
     // TBD
 #define PwInterfaceId_Comparison    3
     // PwMethodCompare  -- compare_sametype, compare;
-#define PwInterfaceId_RandomAccess  4
-    // PwMethodLength
-    // PwMethodGetItem     (by index for arrays/strings or by key for maps)
-    // PwMethodSetItem     (by index for arrays/strings or by key for maps)
-    // PwMethodDeleteItem  (by index for arrays/strings or by key for maps)
-    // PwMethodPopItem -- necessary here? it's just delete_item(length - 1)
 #define PwInterfaceId_String        5
     // TBD substring, truncate, trim, append_substring, etc
 #define PwInterfaceId_Array         6
-    // string supports this interface
+    // string supports this interface too
     // PwMethodAppend
     // PwMethodSlice
     // PwMethodDeleteRange
