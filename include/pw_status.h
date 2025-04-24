@@ -10,35 +10,36 @@ extern "C" {
 
 #define PW_SUCCESS                      0
 #define PW_STATUS_VA_END                1  // used as a terminator for variadic arguments
-#define PW_ERROR_ERRNO                  2
-#define PW_ERROR_OOM                    3
-#define PW_ERROR_NOT_IMPLEMENTED        4
-#define PW_ERROR_INCOMPATIBLE_TYPE      5
-#define PW_ERROR_EOF                    6
-#define PW_ERROR_TIMEOUT                7
-#define PW_ERROR_DATA_SIZE_TOO_BIG      8
-#define PW_ERROR_INDEX_OUT_OF_RANGE     9
-#define PW_ERROR_ITERATION_IN_PROGRESS 10
-#define PW_ERROR_BAD_NUMBER            11
-#define PW_ERROR_BAD_DATETIME          12
-#define PW_ERROR_BAD_TIMESTAMP         13
-#define PW_ERROR_NUMERIC_OVERFLOW      14
+#define PW_ERROR                        2  // basic error for use as custom error in pw_status macro; description is recommended
+#define PW_ERROR_ERRNO                  3
+#define PW_ERROR_OOM                    4
+#define PW_ERROR_NOT_IMPLEMENTED        5
+#define PW_ERROR_INCOMPATIBLE_TYPE      6
+#define PW_ERROR_EOF                    7
+#define PW_ERROR_TIMEOUT                8
+#define PW_ERROR_DATA_SIZE_TOO_BIG      9
+#define PW_ERROR_INDEX_OUT_OF_RANGE    10
+#define PW_ERROR_ITERATION_IN_PROGRESS 11
+#define PW_ERROR_BAD_NUMBER            12
+#define PW_ERROR_BAD_DATETIME          13
+#define PW_ERROR_BAD_TIMESTAMP         14
+#define PW_ERROR_NUMERIC_OVERFLOW      15
 
 // array errors
-#define PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY  15
+#define PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY  16
 
 // map errors
-#define PW_ERROR_KEY_NOT_FOUND        16
+#define PW_ERROR_KEY_NOT_FOUND        17
 
 // File errors
-#define PW_ERROR_FILE_ALREADY_OPENED  17
-#define PW_ERROR_FD_ALREADY_SET       18
-#define PW_ERROR_CANT_SET_FILENAME    19
-#define PW_ERROR_FILE_CLOSED          20
-#define PW_ERROR_NOT_REGULAR_FILE     21
+#define PW_ERROR_FILE_ALREADY_OPENED  18
+#define PW_ERROR_FD_ALREADY_SET       19
+#define PW_ERROR_CANT_SET_FILENAME    20
+#define PW_ERROR_FILE_CLOSED          21
+#define PW_ERROR_NOT_REGULAR_FILE     22
 
 // StringIO errors
-#define PW_ERROR_UNREAD_FAILED        22
+#define PW_ERROR_UNREAD_FAILED        23
 
 uint16_t pw_define_status(char* status);
 /*
@@ -53,6 +54,14 @@ char* pw_status_str(uint16_t status_code);
 /*
  * Get status string by status code.
  */
+
+#define pw_status(status_code, ...)  \
+    /* make status with optional description */ \
+    ({  \
+        __PWDECL_Status(status, (status_code));  \
+        __VA_OPT__( _pw_set_status_desc(status, __VA_ARGS__); )  \
+        status;  \
+    })
 
 static inline bool pw_ok(PwValuePtr status)
 {
@@ -71,9 +80,11 @@ static inline bool pw_error(PwValuePtr status)
     return !pw_ok(status);
 }
 
-#define pw_return_if_error(value_ptr)  \
+#define pw_return_if_error(value_ptr, ...)  \
+    /* emit return statement if value is an error; set description, if provided by variadic arguments */ \
     do {  \
         if (pw_error(value_ptr)) {  \
+            __VA_OPT__( _pw_set_status_desc(value_ptr, __VA_ARGS__); )  \
             return pw_move(value_ptr);  \
         }  \
     } while (false)

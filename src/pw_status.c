@@ -14,6 +14,7 @@
 static char* basic_statuses[] = {
     [PW_SUCCESS]                     = "SUCCESS",
     [PW_STATUS_VA_END]               = "VA_END",
+    [PW_ERROR]                       = "ERROR",
     [PW_ERROR_ERRNO]                 = "ERRNO",
     [PW_ERROR_OOM]                   = "OOM",
     [PW_ERROR_NOT_IMPLEMENTED]       = "NOT IMPLEMENTED",
@@ -104,6 +105,12 @@ void _pw_set_status_desc(PwValuePtr status, char* fmt, ...)
 void _pw_set_status_desc_ap(PwValuePtr status, char* fmt, va_list ap)
 {
     pw_assert_status(status);
+    if (pw_ok(status)) {
+        // do not set description for PW_SUCCESS
+        // such status must not have any allocated data because it is allowed
+        // to be overwritten without calling pw_destroy on it, similar to null value
+        return;
+    }
 
     if (status->has_status_data) {
         pw_destroy(&status->status_data->description);
