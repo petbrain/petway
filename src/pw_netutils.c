@@ -102,11 +102,7 @@ PwResult pw_parse_subnet(PwValuePtr subnet, PwValuePtr netmask)
 {
     // convert CharPtr to String
     PwValue subnet_str = pw_clone(subnet);
-    PwValue netmask_str = pw_clone(netmask);
-
-    if (!pw_is_string(&subnet_str)) {
-        return PwError(PW_ERROR_INCOMPATIBLE_TYPE);
-    }
+    pw_expect(String, subnet_str);
 
     // check CIDR notation
     PwValue parts = pw_string_split_chr(&subnet_str, '/', 0);
@@ -151,9 +147,15 @@ PwResult pw_parse_subnet(PwValuePtr subnet, PwValuePtr netmask)
 
     } else {
         // not CIDR notation, parse netmask parameter
-        if (!pw_is_string(&netmask_str)) {
+
+        if (pw_is_null(netmask)) {
             return PwError(PW_ERROR_MISSING_NETMASK);
         }
+
+        // convert CharPtr to String
+        PwValue netmask_str = pw_clone(netmask);
+        pw_expect(String, netmask_str);
+
         PwValue parsed_netmask = pw_parse_inet_address(&netmask_str);
         pw_return_if_error(&parsed_netmask);
 
