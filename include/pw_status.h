@@ -65,9 +65,6 @@ char* pw_status_str(uint16_t status_code);
 
 static inline bool pw_ok(PwValuePtr status)
 {
-    if (!status) {
-        return false;
-    }
     if (!pw_is_status(status)) {
         // any other type means okay
         return true;
@@ -98,9 +95,6 @@ static inline bool pw_error(PwValuePtr status)
 
 static inline bool pw_eof(PwValuePtr status)
 {
-    if (!status) {
-        return false;
-    }
     if (!pw_is_status(status)) {
         return false;
     }
@@ -109,9 +103,6 @@ static inline bool pw_eof(PwValuePtr status)
 
 static inline bool pw_timeout(PwValuePtr status)
 {
-    if (!status) {
-        return false;
-    }
     if (!pw_is_status(status)) {
         return false;
     }
@@ -120,9 +111,6 @@ static inline bool pw_timeout(PwValuePtr status)
 
 static inline bool pw_va_end(PwValuePtr status)
 {
-    if (!status) {
-        return false;
-    }
     if (!pw_is_status(status)) {
         return false;
     }
