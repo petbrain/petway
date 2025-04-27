@@ -101,6 +101,14 @@ static inline bool pw_eof(PwValuePtr status)
     return status->status_code == PW_ERROR_EOF;
 }
 
+static inline bool pw_errno(PwValuePtr status, int _errno)
+{
+    if (!pw_is_status(status)) {
+        return false;
+    }
+    return status->status_code == PW_ERROR_ERRNO && status->pw_errno == _errno;
+}
+
 static inline bool pw_timeout(PwValuePtr status)
 {
     if (!pw_is_status(status)) {
