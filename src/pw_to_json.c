@@ -7,7 +7,8 @@
 
 // forward declarations
 static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned depth, uint8_t* max_char_size);
-static bool value_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr result);
+static PwResult value_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr result);
+static PwResult value_to_json_file(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr file);
 
 
 static unsigned estimate_escaped_length(PwValuePtr str, uint8_t* char_size)
@@ -85,16 +86,10 @@ static PwResult escape_string(PwValuePtr str)
 {
 #   define APPEND_ESCAPED_CHAR  \
         if (c == '"'  || c == '\\') {  \
-            if (!pw_string_append(&result, '\\')) {  \
-                return PwOOM();  \
-            }  \
-            if (!pw_string_append(&result, c)) {  \
-                return PwOOM();  \
-            }  \
+            pw_expect_true( pw_string_append(&result, '\\') );  \
+            pw_expect_true(pw_string_append(&result, c) );  \
         } else if (c < 32) {  \
-            if (!pw_string_append(&result, '\\')) {  \
-                return PwOOM();  \
-            }  \
+            pw_expect_true( pw_string_append(&result, '\\') );  \
             bool append_ok = false;  \
             switch (c)  {  \
                 case '\b': append_ok = pw_string_append(&result, 'b'); break;  \
@@ -103,24 +98,14 @@ static PwResult escape_string(PwValuePtr str)
                 case '\r': append_ok = pw_string_append(&result, 'r'); break;  \
                 case '\t': append_ok = pw_string_append(&result, 't'); break;  \
                 default:  \
-                    if (!pw_string_append(&result, '0')) {  \
-                        return PwOOM();  \
-                    }  \
-                    if (!pw_string_append(&result, '0')) {  \
-                        return PwOOM();  \
-                    }  \
-                    if (!pw_string_append(&result, (c >> 4) + '0')) {  \
-                        return PwOOM();  \
-                    }  \
+                    pw_expect_true( pw_string_append(&result, '0') );  \
+                    pw_expect_true( pw_string_append(&result, '0') );  \
+                    pw_expect_true( pw_string_append(&result, (c >> 4) + '0') );  \
                     append_ok = pw_string_append(&result, (c & 15) + '0');  \
             }  \
-            if (!append_ok) {  \
-                return PwOOM();  \
-            }  \
+            pw_expect_true( append_ok );  \
         } else {  \
-            if (!pw_string_append(&result, c)) {  \
-                return PwOOM();  \
-            }  \
+            pw_expect_true( pw_string_append(&result, c) );  \
         }
 
     uint8_t char_size;
@@ -173,6 +158,18 @@ static PwResult escape_string(PwValuePtr str)
 #   undef APPEND_ESCAPED_CHAR
 }
 
+static PwResult write_string_to_file(PwValuePtr file, PwValuePtr str)
+{
+    PwValue escaped = escape_string(str);
+    pw_return_if_error(&escaped);
+    unsigned n = pw_strlen_in_utf8(&escaped);
+    char s[n + 2];
+    s[0] = '"';
+    pw_string_to_utf8_buf(&escaped, &s[1]);
+    s[n + 1] = '"';
+    return pw_write_exact(file, s, n + 2);
+}
+
 static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigned depth, uint8_t* max_char_size)
 {
     unsigned num_items = pw_array_length(value);
@@ -205,15 +202,13 @@ static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigne
     return length;
 }
 
-static bool array_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr result)
+static PwResult array_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr result)
 {
     unsigned num_items = pw_array_length(value);
 
-    if (!pw_string_append(result, '[')) {
-        return false;
-    }
+    pw_expect_true( pw_string_append(result, '[') );
     if (num_items == 0) {
-        return pw_string_append(result, ']');
+        pw_return_ok_or_oom( pw_string_append(result, ']') );
     }
     unsigned indent_width = indent * depth;
     char indent_str[indent_width + 2];
@@ -224,27 +219,51 @@ static bool array_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwV
     bool multiline = indent && num_items > 1;
     for (unsigned i = 0; i < num_items; i++) {{
         if (i) {
-            if (!pw_string_append(result, ',')) {
-                return false;
-            }
+            pw_expect_true( pw_string_append(result, ',') );
         }
         if (multiline) {
-            if (!pw_string_append(result, indent_str)) {
-                return false;
-            }
+            pw_expect_true( pw_string_append(result, indent_str) );
         }
         PwValue item = pw_array_item(value, i);
-        if (!value_to_json(&item, indent, depth + multiline, result)) {
-            return false;
-        }
+        pw_expect_ok( value_to_json(&item, indent, depth + multiline, result) );
     }}
     if (multiline) {
         indent_str[indent * (depth - 1) + 1] = 0;  // dedent closing brace
-        if (!pw_string_append(result, indent_str)) {
-            return false;
-        }
+        pw_expect_true( pw_string_append(result, indent_str) );
     }
-    return pw_string_append(result, ']');
+    pw_return_ok_or_oom( pw_string_append(result, ']') );
+}
+
+static PwResult array_to_json_file(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr file)
+{
+    unsigned num_items = pw_array_length(value);
+
+    pw_expect_ok( pw_write_exact(file, "[", 1) );
+    if (num_items == 0) {
+        return pw_write_exact(file, "]",1);
+    }
+    unsigned indent_width = indent * depth;
+    char indent_str[indent_width + 2];
+    indent_str[0] = '\n';
+    memset(&indent_str[1], ' ', indent_width);
+    indent_str[indent_width + 1] = 0;
+
+    bool multiline = indent && num_items > 1;
+    for (unsigned i = 0; i < num_items; i++) {{
+        if (i) {
+            pw_expect_ok( pw_write_exact(file, ",", 1) );
+        }
+        if (multiline) {
+            pw_expect_ok( pw_write_exact(file, indent_str, indent_width + 1) );
+        }
+        PwValue item = pw_array_item(value, i);
+        pw_expect_ok( value_to_json_file(&item, indent, depth + multiline, file) );
+    }}
+    if (multiline) {
+        indent_str[indent * (depth - 1) + 1] = 0;  // dedent closing brace
+        pw_expect_ok( pw_write_exact(file, indent_str, indent * (depth - 1) + 1) );
+    }
+    return pw_write_exact(file, "]", 1);
 }
 
 static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned depth, uint8_t* max_char_size)
@@ -293,15 +312,13 @@ static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned 
     return length;
 }
 
-static bool map_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr result)
+static PwResult map_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr result)
 {
     unsigned num_items = pw_map_length(value);
 
-    if (!pw_string_append(result, '{')) {
-        return false;
-    }
+    pw_expect_true( pw_string_append(result, '{') );
     if (num_items == 0) {
-        return pw_string_append(result, ']');
+        pw_return_ok_or_oom( pw_string_append(result, '}') );
     }
     unsigned indent_width = indent * depth;
     char indent_str[indent_width + 2];
@@ -316,44 +333,67 @@ static bool map_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwVal
         pw_map_item(value, i, &k, &v);
 
         if (i) {
-            if (!pw_string_append(result, ',')) {
-                return false;
-            }
+            pw_expect_true( pw_string_append(result, ',') );
         }
         if (multiline) {
-            if (!pw_string_append(result, indent_str)) {
-                return false;
-            }
+            pw_expect_true( pw_string_append(result, indent_str) );
         }
-        if (!pw_string_append(result, '"')) {
-            return false;
-        }
+        pw_expect_true( pw_string_append(result, '"') );
         PwValue escaped = escape_string(&k);
-        if (pw_error(&escaped)) {
-            return false;
-        }
-        if (!pw_string_append(result, &escaped)) {
-            return false;
-        }
-        if (!pw_string_append(result, "\":")) {
-            return false;
-        }
+        pw_return_if_error(&escaped);
+
+        pw_expect_true( pw_string_append(result, &escaped) );
+        pw_expect_true( pw_string_append(result, "\":") );
         if (indent) {
-            if (!pw_string_append(result, ' ')) {
-                return false;
-            }
+            pw_expect_true( pw_string_append(result, ' ') );
         }
-        if (!value_to_json(&v, indent, depth + multiline, result)) {
-            return false;
-        }
+        pw_expect_ok( value_to_json(&v, indent, depth + multiline, result) );
     }}
     if (multiline) {
         indent_str[indent * (depth - 1) + 1] = 0;  // dedent closing brace
-        if (!pw_string_append(result, indent_str)) {
-            return false;
-        }
+        pw_expect_true( pw_string_append(result, indent_str) );
     }
-    return pw_string_append(result, '}');
+    pw_return_ok_or_oom( pw_string_append(result, '}') );
+}
+
+static PwResult map_to_json_file(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr file)
+{
+    unsigned num_items = pw_map_length(value);
+
+    pw_expect_ok( pw_write_exact(file, "{", 1) );
+    if (num_items == 0) {
+        return pw_write_exact(file, "}", 1);
+    }
+    unsigned indent_width = indent * depth;
+    char indent_str[indent_width + 2];
+    indent_str[0] = '\n';
+    memset(&indent_str[1], ' ', indent_width);
+    indent_str[indent_width + 1] = 0;
+
+    bool multiline = indent && num_items > 1;
+    for (unsigned i = 0; i < num_items; i++) {{
+        PwValue k = PwNull();
+        PwValue v = PwNull();
+        pw_map_item(value, i, &k, &v);
+
+        if (i) {
+            pw_expect_ok( pw_write_exact(file, ",", 1) );
+        }
+        if (multiline) {
+            pw_expect_ok( pw_write_exact(file, indent_str, indent_width + 1) );
+        }
+        pw_expect_ok( write_string_to_file(file, &k) );
+        pw_expect_ok( pw_write_exact(file, ":", 1) );
+        if (indent) {
+            pw_expect_ok( pw_write_exact(file, " ", 1) );
+        }
+        pw_expect_ok( value_to_json_file(&v, indent, depth + multiline, file) );
+    }}
+    if (multiline) {
+        indent_str[indent * (depth - 1) + 1] = 0;  // dedent closing brace
+        pw_expect_ok( pw_write_exact(file, indent_str, indent * (depth - 1) + 1) );
+    }
+    return pw_write_exact(file, "}", 1);
 }
 
 static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned depth, uint8_t* max_char_size)
@@ -394,45 +434,55 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
     return 0;
 }
 
-static bool value_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr result)
+static PwResult value_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr result)
 /*
  * Append serialized value to `result`.
  *
- * Return false if OOM.
+ * Return status.
  */
 {
     if (pw_is_null(value)) {
-        return pw_string_append(result, "null");
+        pw_return_ok_or_oom( pw_string_append(result, "null") );
     }
     if (pw_is_bool(value)) {
-        return pw_string_append(result, (value->bool_value)? "true" : "false");
+        pw_return_ok_or_oom( pw_string_append(result, (value->bool_value)? "true" : "false") );
     }
     if (pw_is_signed(value)) {
         char buf[24];
-        snprintf(buf, sizeof(buf), "%zd", value->signed_value);
-        return pw_string_append(result, buf);
+        int n = snprintf(buf, sizeof(buf), "%zd", value->signed_value);
+        if (n < 0) {
+            return PwError(PW_ERROR);
+        }
+        pw_return_ok_or_oom( pw_string_append(result, buf) );
     }
     if (pw_is_unsigned(value)) {
         char buf[24];
-        snprintf(buf, sizeof(buf), "%zu", value->unsigned_value);
-        return pw_string_append(result, buf);
+        int n = snprintf(buf, sizeof(buf), "%zu", value->unsigned_value);
+        if (n < 0) {
+            return PwError(PW_ERROR);
+        }
+        pw_return_ok_or_oom( pw_string_append(result, buf) );
     }
     if (pw_is_float(value)) {
         char buf[320];
-        snprintf(buf, sizeof(buf), "%f", value->float_value);
-        return pw_string_append(result, buf);
+        int n = snprintf(buf, sizeof(buf), "%f", value->float_value);
+        if (n < 0) {
+            return PwError(PW_ERROR);
+        }
+        pw_return_ok_or_oom( pw_string_append(result, buf) );
     }
     if (pw_is_charptr(value) || pw_is_string(value)) {
         PwValue escaped = escape_string(value);
-        if (pw_error(&escaped)) {
-            return false;
-        }
+        pw_return_if_error(&escaped);
+
         if (pw_string_append(result, '"')) {
             if (pw_string_append(result, &escaped)) {
-                return pw_string_append(result, '"');
+                if (pw_string_append(result, '"')) {
+                    return PwOK();
+                }
             }
         }
-        return false;
+        return PwOOM();
     }
     if (pw_is_array(value)) {
         return array_to_json(value, indent, depth, result);
@@ -440,7 +490,60 @@ static bool value_to_json(PwValuePtr value, unsigned indent, unsigned depth, PwV
     if (pw_is_map(value)) {
         return map_to_json(value, indent, depth, result);
     }
-    pw_panic("Incompatible type for JSON");
+    return PwError(PW_ERROR_INCOMPATIBLE_TYPE);
+}
+
+static PwResult value_to_json_file(PwValuePtr value, unsigned indent, unsigned depth, PwValuePtr file)
+/*
+ * Write serialized value to `file`.
+ *
+ * Return status.
+ */
+{
+    if (pw_is_null(value)) {
+        return pw_write_exact(file, "null", 4);
+    }
+    if (pw_is_bool(value)) {
+        if (value->bool_value) {
+            return pw_write_exact(file, "true", 4);
+        } else {
+            return pw_write_exact(file, "false", 5);
+        }
+    }
+    if (pw_is_signed(value)) {
+        char buf[24];
+        int n = snprintf(buf, sizeof(buf), "%zd", value->signed_value);
+        if (n < 0) {
+            return PwError(PW_ERROR);
+        }
+        return pw_write_exact(file, buf, n);
+    }
+    if (pw_is_unsigned(value)) {
+        char buf[24];
+        int n = snprintf(buf, sizeof(buf), "%zu", value->unsigned_value);
+        if (n < 0) {
+            return PwError(PW_ERROR);
+        }
+        return pw_write_exact(file, buf, n);
+    }
+    if (pw_is_float(value)) {
+        char buf[320];
+        int n = snprintf(buf, sizeof(buf), "%f", value->float_value);
+        if (n < 0) {
+            return PwError(PW_ERROR);
+        }
+        return pw_write_exact(file, buf, n);
+    }
+    if (pw_is_charptr(value) || pw_is_string(value)) {
+        return write_string_to_file(file, value);
+    }
+    if (pw_is_array(value)) {
+        return array_to_json_file(value, indent, depth, file);
+    }
+    if (pw_is_map(value)) {
+        return map_to_json_file(value, indent, depth, file);
+    }
+    return PwError(PW_ERROR_INCOMPATIBLE_TYPE);
 }
 
 PwResult pw_to_json(PwValuePtr value, unsigned indent)
@@ -454,8 +557,13 @@ PwResult pw_to_json(PwValuePtr value, unsigned indent)
     PwValue result = pw_create_empty_string(estimated_len, max_char_size);
     pw_return_if_error(&result);
 
-    if (!value_to_json(value, indent, 1, &result)) {
-        return PwOOM();
-    }
+    pw_expect_ok( value_to_json(value, indent, 1, &result) );
     return pw_move(&result);
+}
+
+PwResult pw_to_json_file(PwValuePtr value, unsigned indent, PwValuePtr file)
+{
+    pw_expect(File, file);
+    pw_expect_ok( value_to_json_file(value, indent, 1, file) );
+    return pw_file_flush(file);
 }

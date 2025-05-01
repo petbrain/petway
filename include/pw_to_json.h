@@ -13,6 +13,15 @@ PwResult pw_to_json(PwValuePtr value, unsigned indent);
  * If `indent` is nonzero, the result is formatted with indentation.
  */
 
+PwResult pw_to_json_file(PwValuePtr value, unsigned indent, PwValuePtr file);
+/*
+ * Convert `value` to JSON and write to `file` in UTF-8 encoding.
+ *
+ * If `indent` is nonzero, the result is formatted with indentation.
+ *
+ * Return status.
+ */
+
 #ifdef __cplusplus
 }
 #endif
