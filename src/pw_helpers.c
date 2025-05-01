@@ -1,4 +1,5 @@
 #include <stdarg.h>
+#include <string.h>
 
 #include "include/pw.h"
 
@@ -35,5 +36,30 @@ PwResult _pw_get(PwValuePtr container, ...)
         obj = pw_clone(&result);
     }}
     va_end(ap);
+    return pw_move(&result);
+}
+
+extern char** environ;
+
+PwResult pw_read_environment()
+{
+    PwValue result = PwMap();
+    for (char** env = environ;;) {{
+        char* var = *env++;
+        if (var == nullptr) {
+            break;
+        }
+        char* separator = strchr(var, '=');
+        if (!separator) {
+            continue;
+        }
+        PwValue key = PwString();
+        pw_expect_true( pw_string_append_substring(&key, var, 0, separator - var) );
+
+        PwValue value = pw_create_string(separator + 1);
+        pw_return_if_error(&value);
+
+        pw_expect_ok( pw_map_update(&result, &key, &value) );
+    }}
     return pw_move(&result);
 }

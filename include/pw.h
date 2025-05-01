@@ -34,3 +34,8 @@ PwResult _pw_get(PwValuePtr container, ...);
  * For maps arguments are used as keys in UTF-8 encoding.
  * For lists arguments are converted to integer index.
  */
+
+PwResult pw_read_environment();
+/*
+ * Return map containing environment variables.
+ */
