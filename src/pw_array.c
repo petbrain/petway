@@ -201,11 +201,7 @@ PwResult _pw_alloc_array(PwTypeId type_id, _PwArray* array_data, unsigned capaci
     unsigned memsize = array_data->capacity * sizeof(_PwValue);
     array_data->items = _pw_types[type_id]->allocator->allocate(memsize, true);
 
-    if (array_data->items) {
-        return PwOK();
-    } else {
-        return PwOOM();
-    }
+    pw_return_ok_or_oom( array_data->items );
 }
 
 void _pw_destroy_array(PwTypeId type_id, _PwArray* array_data, PwValuePtr parent)
@@ -659,13 +655,9 @@ PwResult _pw_array_join(PwValuePtr separator, PwValuePtr array)
         PwValue item = pw_array_item(array, i);
         if (pw_is_string(&item) || pw_is_charptr(&item)) {
             if (i) {
-                if (!_pw_string_append(&result, separator)) {
-                    return PwOOM();
-                }
+                pw_expect_true( _pw_string_append(&result, separator) );
             }
-            if (!_pw_string_append(&result, &item)) {
-                return PwOOM();
-            }
+            pw_expect_true( _pw_string_append(&result, &item) );
         }
     }}
     return pw_move(&result);

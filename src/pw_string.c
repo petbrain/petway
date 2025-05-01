@@ -291,9 +291,8 @@ static PwResult string_deepcopy(PwValuePtr self)
 {
     PwValue result = PwString();
     unsigned length = _pw_string_length(self);
-    if (!make_empty_string(&result, length, _pw_string_char_size(self))) {
-        return PwOOM();
-    }
+    pw_expect_true( make_empty_string(&result, length, _pw_string_char_size(self)) );
+
     get_str_methods(self)->copy_to(_pw_string_start(self), &result, 0, length);
     _pw_string_set_length(&result, length);
     return pw_move(&result);
@@ -1213,9 +1212,7 @@ PwResult pw_create_empty_string(unsigned capacity, uint8_t char_size)
     // using not autocleaned variable here, no pw_move necessary on exit
     __PWDECL_String(result);
 
-    if (!make_empty_string(&result, capacity, char_size)) {
-        return PwOOM();
-    }
+    pw_expect_true( make_empty_string(&result, capacity, char_size) );
     return result;
 }
 
@@ -1232,9 +1229,8 @@ PwResult _pw_create_string(PwValuePtr initializer)
     __PWDECL_String(result);
 
     unsigned length = _pw_string_length(initializer);
-    if (!make_empty_string(&result, length, _pw_string_char_size(initializer))) {
-        return PwOOM();
-    }
+    pw_expect_true( make_empty_string(&result, length, _pw_string_char_size(initializer)) );
+
     get_str_methods(initializer)->copy_to(_pw_string_start(initializer), &result, 0, length);
     _pw_string_set_length(&result, length);
     return pw_move(&result);
@@ -1254,9 +1250,7 @@ PwResult _pw_create_string_u8(char8_t* initializer)
     // using not autocleaned variable here, no pw_move necessary on exit
     __PWDECL_String(result);
 
-    if (!make_empty_string(&result, length, char_size)) {
-        return PwOOM();
-    }
+    pw_expect_true( make_empty_string(&result, length, char_size) );
     if (initializer) {
         get_str_methods(&result)->copy_from_utf8(_pw_string_start(&result), initializer, length);
         _pw_string_set_length(&result, length);
@@ -1278,9 +1272,7 @@ PwResult _pw_create_string_u32(char32_t* initializer)
     // using not autocleaned variable here, no pw_move necessary on exit
     __PWDECL_String(result);
 
-    if (!make_empty_string(&result, length, char_size)) {
-        return PwOOM();
-    }
+    pw_expect_true( make_empty_string(&result, length, char_size) );
     if (initializer) {
         get_str_methods(&result)->copy_from_utf32(_pw_string_start(&result), initializer, length);
         _pw_string_set_length(&result, length);

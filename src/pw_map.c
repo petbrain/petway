@@ -258,9 +258,7 @@ static PwResult _pw_map_expand(PwTypeId type_id, _PwMap* map, unsigned desired_c
         new_capacity <<= 1;
     }
 
-    if (!init_hash_table(type_id, ht, ht->capacity, new_capacity)) {
-        return PwOOM();
-    }
+    pw_expect_true( init_hash_table(type_id, ht, ht->capacity, new_capacity) );
 
     // rebuild hash table
     PwValuePtr key_ptr = &map->kv_pairs.items[0];
@@ -332,9 +330,8 @@ static PwResult map_init(PwValuePtr self, void* ctor_args)
     _PwMap* map = get_data_ptr(self);
     struct _PwHashTable* ht = &map->hash_table;
     ht->items_used = 0;
-    if (!init_hash_table(self->type_id, ht, 0, PWMAP_INITIAL_CAPACITY)) {
-        return PwOOM();
-    }
+    pw_expect_true( init_hash_table(self->type_id, ht, 0, PWMAP_INITIAL_CAPACITY) );
+
     PwValue status = _pw_alloc_array(self->type_id, &map->kv_pairs, PWMAP_INITIAL_CAPACITY * 2);
     if (pw_error(&status)) {
         map_fini(self);

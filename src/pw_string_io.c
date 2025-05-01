@@ -163,9 +163,7 @@ static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
     pw_string_truncate(line, 0);
 
     if (pw_is_string(&sio->pushback)) {
-        if (!pw_string_append(line, &sio->pushback)) {
-            return PwOOM();
-        }
+        pw_expect_true( pw_string_append(line, &sio->pushback) );
         pw_destroy(&sio->pushback);
         sio->line_number++;
         return PwOK();

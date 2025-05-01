@@ -1191,7 +1191,7 @@ void test_json()
         // test pw_get
 
         PwValue v = pw_get(&value, "3", "list", "-1", "three", "1");
-        pw_dump(stderr, &v);
+        //pw_dump(stderr, &v);
         TEST(pw_equal(&v, 2));
 
         PwValue v2 = pw_get(&value, "0", "that");
