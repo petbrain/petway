@@ -16,19 +16,40 @@ extern "C" {
  *  - File
  *  - Reader
  *  - Writer
- *  - LineReader
- *
- * LineReader can be considered as a singleton iterator,
- * comprised of both iterable and iterator.
- *
- * This means nested iterations aren't possible but they do not make
- * sense for files either.
  */
 
 extern PwTypeId PwTypeId_File;
 
 #define pw_is_file(value)      pw_is_subtype((value), PwTypeId_File)
 #define pw_assert_file(value)  pw_assert(pw_is_file(value))
+
+
+/*
+ * In addition to interfaces supported by File, BufferedFile type also supports:
+ *  - BufferedFile
+ *  - LineReader
+ *
+ * Position returned by `seek` method is meaningless for buffered file.
+ * This method resets buffers. Write buffer is flushed.
+ *
+ * LineReader has dual purpose. Its `read_line`, `unread_line` can be used as normal
+ * methods, but when wrapped with `start` and `stop`, it can be considered as a singleton
+ * iterator, comprised of both iterable and iterator.
+ *
+ * This means nested iterations aren't possible but they do not make
+ * sense for files either.
+ */
+
+extern PwTypeId PwTypeId_BufferedFile;
+
+#define pw_is_buffered_file(value)      pw_is_subtype((value), PwTypeId_BufferedFile)
+#define pw_assert_buffered_file(value)  pw_assert(pw_is_buffered_file(value))
+
+typedef struct {
+    unsigned read_bufsize;
+    unsigned write_bufsize;
+
+} PwBufferedFileCtorArgs;
 
 
 /****************************************************************
@@ -56,10 +77,10 @@ typedef struct {
      * Returns file descriptor or -1.
      */
 
-    PwResult (*set_fd)(PwValuePtr self, int fd, bool move);
+    PwResult (*set_fd)(PwValuePtr self, int fd, bool take_ownership);
     /*
      * Set file descriptor obtained elsewhere.
-     * If `move` is true, File takes the ownership and fd will be closed by `close` method.
+     * If `take_ownership` is true, File takes the ownership and fd will be closed by `close` method.
      * Return status.
      */
 
@@ -94,9 +115,29 @@ typedef struct {
 
 } PwInterface_File;
 
+
+/****************************************************************
+ * BufferedFile interface
+ */
+
+extern unsigned PwInterfaceId_BufferedFile;
+
+typedef struct {
+
+    PwResult (*flush)(PwValuePtr self);
+    /*
+     * Flush write buffer.
+     */
+
+} PwInterface_BufferedFile;
+
+
 /****************************************************************
  * Shorthand functions
  */
+
+// `pw_file_open` and `pw_file_from_fd` return BufferedFile
+// with read buffer equals to page size and with no write bufer
 
 #define pw_file_open(file_name, flags, mode) _Generic((file_name), \
              char*: _pw_file_open_u8_wrapper,  \
@@ -115,14 +156,22 @@ static inline PwResult _pw_file_open_u8_wrapper(char* file_name, int flags, mode
     return _pw_file_open_u8((char8_t*) file_name, flags, mode);
 }
 
+PwResult pw_file_from_fd(int fd, bool take_ownership);
+
+PwResult pw_write_exact(PwValuePtr file, void* data, unsigned size);
+/*
+ * Write exactly `size` bytes. Return status.
+ */
+
 static inline void     pw_file_close   (PwValuePtr file) { pw_interface(file->type_id, File)->close(file); }
 static inline int      pw_file_get_fd  (PwValuePtr file) { return pw_interface(file->type_id, File)->get_fd(file); }
 static inline PwResult pw_file_get_name(PwValuePtr file) { return pw_interface(file->type_id, File)->get_name(file); }
-static inline PwResult pw_file_set_fd  (PwValuePtr file, int fd, bool move)        { return pw_interface(file->type_id, File)->set_fd(file, fd, move); }
-static inline PwResult pw_file_set_name(PwValuePtr file, PwValuePtr file_name)     { return pw_interface(file->type_id, File)->set_name(file, file_name); }
-static inline PwResult pw_file_set_nonblocking(PwValuePtr file, bool mode)         { return pw_interface(file->type_id, File)->set_nonblocking(file, mode); }
-static inline PwResult pw_file_seek    (PwValuePtr file, off_t offset, int whence) { return pw_interface(file->type_id, File)->seek(file, offset, whence); }
+static inline PwResult pw_file_set_fd  (PwValuePtr file, int fd, bool take_ownership) { return pw_interface(file->type_id, File)->set_fd(file, fd, take_ownership); }
+static inline PwResult pw_file_set_name(PwValuePtr file, PwValuePtr file_name)        { return pw_interface(file->type_id, File)->set_name(file, file_name); }
+static inline PwResult pw_file_set_nonblocking(PwValuePtr file, bool mode)            { return pw_interface(file->type_id, File)->set_nonblocking(file, mode); }
+static inline PwResult pw_file_seek    (PwValuePtr file, off_t offset, int whence)    { return pw_interface(file->type_id, File)->seek(file, offset, whence); }
 static inline PwResult pw_file_tell    (PwValuePtr file) { return pw_interface(file->type_id, File)->tell(file); }
+static inline PwResult pw_file_flush   (PwValuePtr file) { return pw_interface(file->type_id, BufferedFile)->flush(file); }
 
 
 /****************************************************************

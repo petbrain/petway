@@ -12,30 +12,32 @@
 #include "src/pw_struct_internal.h"
 
 static char* basic_statuses[] = {
-    [PW_SUCCESS]                     = "SUCCESS",
-    [PW_STATUS_VA_END]               = "VA_END",
-    [PW_ERROR]                       = "ERROR",
-    [PW_ERROR_ERRNO]                 = "ERRNO",
-    [PW_ERROR_OOM]                   = "OOM",
-    [PW_ERROR_NOT_IMPLEMENTED]       = "NOT IMPLEMENTED",
-    [PW_ERROR_INCOMPATIBLE_TYPE]     = "INCOMPATIBLE_TYPE",
-    [PW_ERROR_EOF]                   = "EOF",
-    [PW_ERROR_TIMEOUT]               = "TIMEOUT",
-    [PW_ERROR_DATA_SIZE_TOO_BIG]     = "DATA_SIZE_TOO_BIG",
-    [PW_ERROR_INDEX_OUT_OF_RANGE]    = "INDEX_OUT_OF_RANGE",
-    [PW_ERROR_ITERATION_IN_PROGRESS] = "ITERATION_IN_PROGRESS",
-    [PW_ERROR_BAD_NUMBER]            = "BAD_NUMBER",
-    [PW_ERROR_BAD_DATETIME]          = "BAD_DATETIME",
-    [PW_ERROR_BAD_TIMESTAMP]         = "BAD_TIMESTAMP",
-    [PW_ERROR_NUMERIC_OVERFLOW]      = "NUMERIC_OVERFLOW",
+    [PW_SUCCESS]                        = "SUCCESS",
+    [PW_STATUS_VA_END]                  = "VA_END",
+    [PW_ERROR]                          = "ERROR",
+    [PW_ERROR_ERRNO]                    = "ERRNO",
+    [PW_ERROR_OOM]                      = "OOM",
+    [PW_ERROR_NOT_IMPLEMENTED]          = "NOT IMPLEMENTED",
+    [PW_ERROR_INCOMPATIBLE_TYPE]        = "INCOMPATIBLE_TYPE",
+    [PW_ERROR_EOF]                      = "EOF",
+    [PW_ERROR_TIMEOUT]                  = "TIMEOUT",
+    [PW_ERROR_DATA_SIZE_TOO_BIG]        = "DATA_SIZE_TOO_BIG",
+    [PW_ERROR_INDEX_OUT_OF_RANGE]       = "INDEX_OUT_OF_RANGE",
+    [PW_ERROR_ITERATION_IN_PROGRESS]    = "ITERATION_IN_PROGRESS",
+    [PW_ERROR_BAD_NUMBER]               = "BAD_NUMBER",
+    [PW_ERROR_BAD_DATETIME]             = "BAD_DATETIME",
+    [PW_ERROR_BAD_TIMESTAMP]            = "BAD_TIMESTAMP",
+    [PW_ERROR_NUMERIC_OVERFLOW]         = "NUMERIC_OVERFLOW",
     [PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY] = "EXTRACT_FROM_EMPTY_ARRAY",
-    [PW_ERROR_KEY_NOT_FOUND]         = "KEY_NOT_FOUND",
-    [PW_ERROR_FILE_ALREADY_OPENED]   = "FILE_ALREADY_OPENED",
-    [PW_ERROR_FD_ALREADY_SET]        = "FD_ALREADY_SET",
-    [PW_ERROR_CANT_SET_FILENAME]     = "CANT_SET_FILENAME",
-    [PW_ERROR_FILE_CLOSED]           = "FILE_CLOSED",
-    [PW_ERROR_NOT_REGULAR_FILE]      = "NOT_REGULAR_FILE",
-    [PW_ERROR_UNREAD_FAILED]         = "UNREAD_FAILED"
+    [PW_ERROR_KEY_NOT_FOUND]            = "KEY_NOT_FOUND",
+    [PW_ERROR_FILE_ALREADY_OPENED]      = "FILE_ALREADY_OPENED",
+    [PW_ERROR_FD_ALREADY_SET]           = "FD_ALREADY_SET",
+    [PW_ERROR_CANT_SET_FILENAME]        = "CANT_SET_FILENAME",
+    [PW_ERROR_FILE_CLOSED]              = "FILE_CLOSED",
+    [PW_ERROR_NOT_REGULAR_FILE]         = "NOT_REGULAR_FILE",
+    [PW_ERROR_UNBUFFERED_FILE]          = "UNBUFFERED_FILE",
+    [PW_ERROR_WRITE]                    = "WRITE",
+    [PW_ERROR_UNREAD_FAILED]            = "UNREAD_FAILED"
 };
 
 static char** statuses = nullptr;
@@ -137,10 +139,17 @@ void _pw_set_status_desc_ap(PwValuePtr status, char* fmt, va_list ap)
 
 void pw_print_status(FILE* fp, PwValuePtr status)
 {
+    // XXX rewrite in error-free way
+
     PwValue desc = pw_typeof(status)->to_string(status);
-    PW_CSTRING_LOCAL(desc_cstr, &desc);
-    fputs(desc_cstr, fp);
-    fputc('\n', fp);
+    if (!pw_is_string(&desc)) {
+        // XXX
+        pw_dump(fp, &desc);
+    } else {
+        PW_CSTRING_LOCAL(desc_cstr, &desc);
+        fputs(desc_cstr, fp);
+        fputc('\n', fp);
+    }
 }
 
 /****************************************************************

@@ -37,9 +37,11 @@ extern "C" {
 #define PW_ERROR_CANT_SET_FILENAME    20
 #define PW_ERROR_FILE_CLOSED          21
 #define PW_ERROR_NOT_REGULAR_FILE     22
+#define PW_ERROR_UNBUFFERED_FILE      23
+#define PW_ERROR_WRITE                24
 
 // StringIO errors
-#define PW_ERROR_UNREAD_FAILED        23
+#define PW_ERROR_UNREAD_FAILED        25
 
 uint16_t pw_define_status(char* status);
 /*
@@ -86,10 +88,26 @@ static inline bool pw_error(PwValuePtr status)
         }  \
     } while (false)
 
+#define pw_return_ok_or_oom( function_call )  \
+    do {  \
+        if (function_call) {  \
+            return PwOK();  \
+        } else {  \
+            return PwOOM();  \
+        }  \
+    } while (false)
+
 #define pw_expect_ok( function_call )  \
     do {  \
         PwValue __status = function_call;  \
         pw_return_if_error(&__status);  \
+    } while (false)
+
+#define pw_expect_true( function_call )  \
+    do {  \
+        if (!(function_call)) {  \
+            return PwOOM();  \
+        }  \
     } while (false)
 
 
