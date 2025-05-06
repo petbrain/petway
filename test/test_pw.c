@@ -1188,16 +1188,6 @@ void test_json()
         PwString_1_12(8, 'd', 'a', 'z', ' ', 'g', 'o', 'o', 'd', 0,0,0,0)
     );
     {
-        // test pw_get
-
-        PwValue v = pw_get(&value, "3", "list", "-1", "three", "1");
-        //pw_dump(stderr, &v);
-        TEST(pw_equal(&v, 2));
-
-        PwValue v2 = pw_get(&value, "0", "that");
-        TEST(pw_error(&v2));
-    }
-    {
         PwValue result = pw_to_json(&value, 0);
         PwValue reference = pw_create_string(
             "[\"this\",\"is\",\"a\",{\"number\":1,\"list\":[\"one\",\"two\",{\"three\":[1,2,{\"four\":\"five\\nsix\\n\"}]}]},\"daz good\"]"
@@ -1234,6 +1224,36 @@ void test_json()
         //PW_CSTRING_LOCAL(json, &result);
         //fprintf(stderr, "%s\n", json);
         TEST(pw_equal(&result, &reference));
+    }
+    // test pw_get
+    {
+        PwValue v = pw_get(&value, "3", "number");
+        //pw_dump(stderr, &v);
+        TEST(pw_equal(&v, 1));
+
+        PwValue v2 = pw_get(&value, "3", "list", "-1", "three", "1");
+        //pw_dump(stderr, &v2);
+        TEST(pw_equal(&v2, 2));
+
+        PwValue v3 = pw_get(&value, "0", "that");
+        TEST(pw_error(&v3));
+    }
+    // test pw_set
+    {
+        PwValue v = PwUnsigned(777);
+        PwValue status = pw_set(&v, &value, "3", "number");
+        TEST(pw_ok(&status));
+        v = pw_get(&value, "3", "number");
+        TEST(pw_equal(&v, 777));
+    }{
+        PwValue v = PwUnsigned(777);
+        PwValue status = pw_set(&v, &value, "3", "list", "-1", "three", "1");
+        TEST(pw_ok(&status));
+        v = pw_get(&value, "3", "list", "-1", "three", "1");
+        TEST(pw_equal(&v, 777));
+
+        PwValue status2 = pw_set(&v, &value, "0", "that");
+        TEST(pw_error(&status2));
     }
 }
 

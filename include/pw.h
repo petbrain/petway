@@ -27,8 +27,11 @@
 
 #define pw_get(container, ...) _pw_get((container) __VA_OPT__(,) __VA_ARGS__, nullptr)
 PwResult _pw_get(PwValuePtr container, ...);
+
+#define pw_set(value, container, ...) _pw_set((value), (container) __VA_OPT__(,) __VA_ARGS__, nullptr)
+PwResult _pw_set(PwValuePtr value, PwValuePtr container, ...);
 /*
- * Get value from container object.
+ * Get value from container object / set value.
  * Variadic arguments are path to value and all must have char* type because
  * there's no simple way to distinguish types of variadic args.
  * For maps arguments are used as keys in UTF-8 encoding.
