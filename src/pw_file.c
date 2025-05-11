@@ -630,8 +630,13 @@ static PwResult bfile_write(PwValuePtr self, void* data, unsigned size, unsigned
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
+    *bytes_written = 0;
+
+    if (size == 0) {
+        return PwOK();
+    }
+
     if (f->iterating) {
-        *bytes_written = 0;
         return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
     }
 
@@ -642,40 +647,39 @@ static PwResult bfile_write(PwValuePtr self, void* data, unsigned size, unsigned
 
     unsigned remaining_capacity = f->write_buffer_size - f->write_position;
 
-    // move data to write_buffer and flush it if full
-
-    if (size <= remaining_capacity) {
-        // the data fits into write buffer
-        memcpy(f->write_buffer + f->write_position, data, size);
-        f->write_position += size;
-        *bytes_written = size;
+    if (remaining_capacity) {
+        // fill the write_buffer
+        unsigned n = (size < remaining_capacity)? size : remaining_capacity;
+        memcpy(f->write_buffer + f->write_position, data, n);
+        f->write_position += n;
+        *bytes_written += n;
         if (f->write_position < f->write_buffer_size) {
+            // write_buffer is not full yet
             return PwOK();
         }
-        return bfile_flush(self);
+        size -= n;
+        data = ((uint8_t*) data) + n;
     }
-    if (f->write_position) {
-        // the data is bigger than remining capacity and write_buffer also contains some data
-        // this means we can't write directly to file yet
-        memcpy(f->write_buffer + f->write_position, data, remaining_capacity);
-        *bytes_written += remaining_capacity;
-        // adjust arguments
-        data = ((uint8_t*) data) + remaining_capacity;
-        size -= remaining_capacity;
-        // flush write buffer
-        pw_expect_ok( bfile_flush(self) );
-    }
-    if (size < f->write_buffer_size) {
-        // move final chunk to the write_buffer
+    // write_buffer is full, flush it
+    pw_expect_ok( bfile_flush(self) );
+
+    // write directly to file
+    while (size >= f->write_buffer_size) {{
+        unsigned n;
+        PwValue status = bfile_strict_write(self, data, f->write_buffer_size, &n);
+        *bytes_written += n;
+        pw_return_if_error(&status);
+        size -= n;
+        data = ((uint8_t*) data) + n;
+    }}
+
+    if (size) {
+        // move remaining data to the write_buffer
         memcpy(f->write_buffer, data, size);
+        *bytes_written += size;
         f->write_position = size;
-        *bytes_written = size;
-        return PwOK();
     }
-
-    // write_buffer is empty, write remaining data directly to file
-
-    return bfile_strict_write(self, f->write_buffer, f->write_position, bytes_written);
+    return PwOK();
 }
 
 static PwInterface_Writer bfile_writer_interface = {
