@@ -510,7 +510,7 @@ static PwInterface_Writer socket_writer_interface = {
  */
 
 [[ gnu::constructor ]]
-static void init_globals()
+void _pw_init_socket()
 {
     // interface can be already registered
     // basically. interfaces can be registered by any type in any order
