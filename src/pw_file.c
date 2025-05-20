@@ -901,7 +901,7 @@ PwResult _pw_file_open(PwValuePtr file_name, int flags, mode_t mode)
 {
     PwBufferedFileCtorArgs args = {
         .read_bufsize = sys_page_size,
-        .write_bufsize = 0
+        .write_bufsize = sys_page_size
     };
     PwValue file = pw_create2(PwTypeId_BufferedFile, &args);
     pw_return_if_error(&file);
@@ -915,7 +915,7 @@ PwResult pw_file_from_fd(int fd, bool take_ownership)
 {
     PwBufferedFileCtorArgs args = {
         .read_bufsize = sys_page_size,
-        .write_bufsize = 0
+        .write_bufsize = sys_page_size
     };
     PwValue file = pw_create2(PwTypeId_BufferedFile, &args);
     pw_return_if_error(&file);
