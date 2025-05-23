@@ -269,7 +269,7 @@ static bool parse_nanosecond_frac(PwValuePtr str, unsigned* pos, uint32_t* resul
     unsigned i = 0;
     while (!end_of_line(str, p)) {
         char32_t chr = pw_char_at(str, p);
-        if (!pw_isdigit(chr)) {
+        if (!pw_is_ascii_digit(chr)) {
             break;
         }
         if (i == 9) {
@@ -309,7 +309,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     // parse YYYY part
     for (unsigned i = 0; i < 4; i++, pos++) {
         chr = pw_char_at(str, pos);
-        if (!pw_isdigit(chr)) { goto bad_datetime; }
+        if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
         result.year *= 10;
         result.year += chr - '0';
     }
@@ -320,7 +320,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     // parse MM part
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
-        if (!pw_isdigit(chr)) { goto bad_datetime; }
+        if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
         result.month *= 10;
         result.month += chr - '0';
     }
@@ -331,7 +331,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     // parse DD part
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
-        if (!pw_isdigit(chr)) { goto bad_datetime; }
+        if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
         result.day *= 10;
         result.day += chr - '0';
     }
@@ -348,7 +348,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     // parse HH part
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
-        if (!pw_isdigit(chr)) { goto bad_datetime; }
+        if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
         result.hour *= 10;
         result.hour += chr - '0';
     }
@@ -359,7 +359,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     // parse MM part
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
-        if (!pw_isdigit(chr)) { goto bad_datetime; }
+        if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
         result.minute *= 10;
         result.minute += chr - '0';
     }
@@ -370,7 +370,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     // parse SS part
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
-        if (!pw_isdigit(chr)) { goto bad_datetime; }
+        if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
         result.second *= 10;
         result.second += chr - '0';
     }
@@ -399,7 +399,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
         unsigned offset_hour = 0;
         for (unsigned i = 0; i < 2; i++, pos++) {
             chr = pw_char_at(str, pos);
-            if (!pw_isdigit(chr)) { goto bad_datetime; }
+            if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
             offset_hour *= 10;
             offset_hour += chr - '0';
         }
@@ -411,10 +411,10 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
         unsigned offset_minute = 0;
         if (!end_of_line(str, pos)) {
             chr = pw_char_at(str, pos);
-            if (pw_isdigit(chr)) {
+            if (pw_is_ascii_digit(chr)) {
                 for (unsigned i = 0; i < 2; i++, pos++) {
                     chr = pw_char_at(str, pos);
-                    if (!pw_isdigit(chr)) { goto bad_datetime; }
+                    if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
                     offset_minute *= 10;
                     offset_minute += chr - '0';
                 }

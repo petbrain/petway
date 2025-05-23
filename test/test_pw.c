@@ -660,13 +660,80 @@ void test_string()
         TEST(!pw_endswith(&str, "wow"));
     }
 
-    { // test isdigit
+    { // test isdigit, is_ascii_digit
         PwValue empty = PwString();
         PwValue nondigit = pw_create_string(u8"123รูปโป๊");
         PwValue digit = pw_create_string("456");
-        TEST(!pw_string_isdigit(&empty));
-        TEST(!pw_string_isdigit(&nondigit));
-        TEST(pw_string_isdigit(&digit));
+        TEST(!pw_string_is_ascii_digit(&empty));
+        TEST(!pw_string_is_ascii_digit(&nondigit));
+        TEST(pw_string_is_ascii_digit(&digit));
+
+        PwValue th_digit = pw_create_string(u8"๑๒๓๔๕");
+        TEST(pw_string_isdigit(&th_digit));
+
+        // fail:
+        // TEST(pw_isdigit(U'零'));
+        // TEST(pw_isdigit(U'〇'));
+        //PwValue zh_digit = pw_create_string(u8"一二三四五");
+        //TEST(pw_string_isdigit(&zh_digit));
+    }
+    { // test isalnum
+        TEST(pw_isalnum(U'๕'));
+    }
+    { // test isspace, isblank
+        TEST(pw_isspace(' '));
+        TEST(pw_isblank(' '));
+        TEST(pw_isspace('\t'));
+        TEST(pw_isblank('\t'));
+        TEST(pw_isspace('\r'));
+        TEST(!pw_isblank('\r'));
+        TEST(pw_isspace('\n'));
+        TEST(!pw_isblank('\n'));
+        // nbsp
+        TEST(pw_isspace(160));
+        TEST(pw_isblank(160));
+        // En Quad
+        TEST(pw_isspace(8192));
+        TEST(pw_isblank(8192));
+        // Em Quad
+        TEST(pw_isspace(8193));
+        TEST(pw_isblank(8193));
+        // En Space
+        TEST(pw_isspace(8194));
+        TEST(pw_isblank(8194));
+        // Em Space
+        TEST(pw_isspace(8195));
+        TEST(pw_isblank(8195));
+        // Three-Per-Em Space
+        TEST(pw_isspace(8196));
+        TEST(pw_isblank(8196));
+        // Four-Per-Em Space
+        TEST(pw_isspace(8197));
+        TEST(pw_isblank(8197));
+        // Six-Per-Em Space
+        TEST(pw_isspace(8198));
+        TEST(pw_isblank(8198));
+        // Figure Space
+        TEST(pw_isspace(8199));
+        TEST(pw_isblank(8199));
+        // Punctuation Space
+        TEST(pw_isspace(8200));
+        TEST(pw_isblank(8200));
+        // Thin Space
+        TEST(pw_isspace(8201));
+        TEST(pw_isblank(8201));
+        // Hair Space
+        TEST(pw_isspace(8202));
+        TEST(pw_isblank(8202));
+        // Line Separator
+        TEST(pw_isspace(8232));
+        TEST(!pw_isblank(8232));
+        // Medium Mathematical Space
+        TEST(pw_isspace(8287));
+        TEST(pw_isblank(8287));
+        // Ideographic Space
+        TEST(pw_isspace(12288));
+        TEST(pw_isblank(12288));
     }
 }
 

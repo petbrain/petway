@@ -336,14 +336,30 @@ unsigned pw_string_skip_chars(PwValuePtr str, unsigned position, char32_t* skipc
 
 #ifdef PW_WITH_ICU
 #   define pw_isspace(c)  u_isspace(c)
+#   define pw_isblank(c)  u_isblank(c)
+#   define pw_isalpha(c)  u_isalpha(c)
+#   define pw_isdigit(c)  u_isdigit(c)
+#   define pw_isalnum(c)  u_isalnum(c)
+#   define pw_ispunct(c)  u_ispunct(c)
+#   define pw_iscntrl(c)  u_iscntrl(c)
+#   define pw_isgraph(c)  u_isgraph(c)
+#   define pw_isprint(c)  u_isprint(c)
 #else
 #   define pw_isspace(c)  isspace(c)
+#   define pw_isblank(c)  isblank(c)
+#   define pw_isalpha(c)  isalpha(c)
+#   define pw_isdigit(c)  isdigit(c)
+#   define pw_isalnum(c)  isalnum(c)
+#   define pw_ispunct(c)  ispunct(c)
+#   define pw_iscntrl(c)  iscntrl(c)
+#   define pw_isgraph(c)  isgraph(c)
+#   define pw_isprint(c)  isprint(c)
 #endif
 /*
  * Return true if `c` is a whitespace character.
  */
 
-#define pw_isdigit(c)  isdigit(c)
+#define pw_is_ascii_digit(c)  isdigit(c)
 /*
  * Return true if `c` is an ASCII digit.
  * Do not consider any other unicode digits because this function
@@ -352,6 +368,7 @@ unsigned pw_string_skip_chars(PwValuePtr str, unsigned position, char32_t* skipc
  */
 
 bool pw_string_isdigit(PwValuePtr str);
+bool pw_string_is_ascii_digit(PwValuePtr str);
 /*
  * Return true if `str` is not empty and contains all digits.
  */

@@ -2277,3 +2277,22 @@ bool pw_string_isdigit(PwValuePtr str)
     }
     return true;
 }
+
+bool pw_string_is_ascii_digit(PwValuePtr str)
+{
+    pw_assert_string(str);
+    unsigned length;
+    uint8_t* ptr = _pw_string_start_length(str, &length);
+    if (length == 0) {
+        return false;
+    }
+    uint8_t char_size = _pw_string_char_size(str);
+    for (unsigned i = 0; i < length; i++) {
+        char32_t c = _pw_get_char(ptr, char_size);
+        if (!pw_is_ascii_digit(c)) {
+            return false;
+        }
+        ptr += char_size;
+    }
+    return true;
+}
