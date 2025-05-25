@@ -24,24 +24,25 @@ extern "C" {
 #define PW_ERROR_BAD_DATETIME          13
 #define PW_ERROR_BAD_TIMESTAMP         14
 #define PW_ERROR_NUMERIC_OVERFLOW      15
+#define PW_ERROR_INCOMPLETE_UTF8       16
 
 // array errors
-#define PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY  16
+#define PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY  17
 
 // map errors
-#define PW_ERROR_KEY_NOT_FOUND        17
+#define PW_ERROR_KEY_NOT_FOUND        18
 
 // File errors
-#define PW_ERROR_FILE_ALREADY_OPENED  18
-#define PW_ERROR_FD_ALREADY_SET       19
-#define PW_ERROR_CANT_SET_FILENAME    20
-#define PW_ERROR_FILE_CLOSED          21
-#define PW_ERROR_NOT_REGULAR_FILE     22
-#define PW_ERROR_UNBUFFERED_FILE      23
-#define PW_ERROR_WRITE                24
+#define PW_ERROR_FILE_ALREADY_OPENED  19
+#define PW_ERROR_FD_ALREADY_SET       20
+#define PW_ERROR_CANT_SET_FILENAME    21
+#define PW_ERROR_FILE_CLOSED          22
+#define PW_ERROR_NOT_REGULAR_FILE     23
+#define PW_ERROR_UNBUFFERED_FILE      24
+#define PW_ERROR_WRITE                25
 
 // StringIO errors
-#define PW_ERROR_UNREAD_FAILED        25
+#define PW_ERROR_UNREAD_FAILED        26
 
 uint16_t pw_define_status(char* status);
 /*

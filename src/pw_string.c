@@ -406,6 +406,51 @@ static bool string_equal(PwValuePtr self, PwValuePtr other)
     }
 }
 
+/****************************************************************
+ * Writer interface
+ */
+
+static PwResult string_write(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written)
+/*
+ * The data is expected in UTF-8 encoding. If it ends with incomplete sequence,
+ * `bytes_written` will be less than `size` and return value will be PW_ERROR_INCOMPLETE_UTF8.
+ */
+{
+    if (!pw_string_append_utf8(self, data, size, bytes_written)) {
+        *bytes_written = 0;
+        return PwOOM();
+    }
+    if (*bytes_written != size) {
+        return PwError(PW_ERROR_INCOMPLETE_UTF8);
+    }
+    return PwOK();
+}
+
+
+static PwInterface_Writer writer_interface = {
+    .write = string_write
+};
+
+/****************************************************************
+ * String type
+ */
+
+//static PwInterface_RandomAccess random_access_interface;
+
+
+static _PwInterface string_interfaces[] = {
+    /*
+    {
+        .interface_id      = PwInterfaceId_RandomAccess,
+        .interface_methods = (void**) &random_access_interface
+    }
+    */
+    {
+        .interface_id      = PwInterfaceId_Writer,
+        .interface_methods = (void**) &writer_interface
+    }
+};
+
 PwType _pw_string_type = {
     .id             = PwTypeId_String,
     .ancestor_id    = PwTypeId_Null,  // no ancestor
@@ -420,9 +465,10 @@ PwType _pw_string_type = {
     .to_string      = string_deepcopy,  // yes, simply make a copy
     .is_true        = string_is_true,
     .equal_sametype = string_equal_sametype,
-    .equal          = string_equal
+    .equal          = string_equal,
 
-    // [PwInterfaceId_RandomAccess] = &string_type_random_access_interface
+    .num_interfaces = PW_LENGTH(string_interfaces),
+    .interfaces     = string_interfaces
 };
 
 /****************************************************************
