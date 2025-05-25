@@ -20,7 +20,13 @@ static Arena* arena = nullptr;  // arena for interface methods, per data type
 [[ noreturn ]]
 void _pw_panic_no_interface(PwTypeId type_id, unsigned interface_id)
 {
-    pw_panic("Interface %u is not defined for %s\n", interface_id, _pw_types[type_id]->name);
+    char* iname;
+    if (registered_interfaces) {
+        iname = registered_interfaces[interface_id].name;
+    } else {
+        iname = "unknown";
+    }
+    pw_panic("Interface %u (%s) is not defined for %s\n", interface_id, iname, _pw_types[type_id]->name);
 }
 
 #define MAX_INTERFACES  (UINT_MAX - 1)  // UINT_MAX equals to -1 which is used as terminator
