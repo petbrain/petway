@@ -158,11 +158,6 @@ static inline PwResult _pw_file_open_u8_wrapper(char* file_name, int flags, mode
 
 PwResult pw_file_from_fd(int fd, bool take_ownership);
 
-PwResult pw_write_exact(PwValuePtr file, void* data, unsigned size);
-/*
- * Write exactly `size` bytes. Return status.
- */
-
 static inline void     pw_file_close   (PwValuePtr file) { pw_interface(file->type_id, File)->close(file); }
 static inline int      pw_file_get_fd  (PwValuePtr file) { return pw_interface(file->type_id, File)->get_fd(file); }
 static inline PwResult pw_file_get_name(PwValuePtr file) { return pw_interface(file->type_id, File)->get_name(file); }

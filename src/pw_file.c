@@ -925,17 +925,6 @@ PwResult pw_file_from_fd(int fd, bool take_ownership)
     return pw_move(&file);
 }
 
-PwResult pw_write_exact(PwValuePtr file, void* data, unsigned size)
-{
-    unsigned bytes_written;
-    PwValue status = pw_write(file, data, size, &bytes_written);
-    pw_return_if_error(&status);
-    if (bytes_written != size) {
-        return PwError(PW_ERROR_WRITE);
-    }
-    return PwOK();
-}
-
 /****************************************************************
  * Miscellaneous functions
  */

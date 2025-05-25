@@ -221,6 +221,12 @@ static inline PwResult pw_write(PwValuePtr writer, void* data, unsigned size, un
     return pw_interface(writer->type_id, Writer)->write(writer, data, size, bytes_written);
 }
 
+PwResult pw_write_exact(PwValuePtr writeable, void* data, unsigned size);
+/*
+ * Write exactly `size` bytes. Return status.
+ * XXX blend with bfile_strict_write? What about asyncio?
+ */
+
 #ifdef __cplusplus
 }
 #endif
