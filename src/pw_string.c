@@ -1768,11 +1768,11 @@ bool _pw_string_append_substring(PwValuePtr dest, PwValuePtr src, unsigned src_s
 
 bool pw_string_append_utf8(PwValuePtr dest, char8_t* buffer, unsigned size, unsigned* bytes_processed)
 {
+    *bytes_processed = size;
     if (size == 0) {
         return true;
     }
     uint8_t src_char_size;
-    *bytes_processed = size;
     unsigned src_len = utf8_strlen2_buf(buffer, bytes_processed, &src_char_size);
 
     if (src_len) {
