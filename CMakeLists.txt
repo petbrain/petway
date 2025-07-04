@@ -37,6 +37,7 @@ add_library(petway STATIC
     src/pw_string_io.c
     src/pw_struct.c
     src/pw_to_json.c
+    src/pw_task.c
     src/pw_types.c
 )
 

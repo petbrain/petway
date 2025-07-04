@@ -25,20 +25,20 @@ typedef struct {
     PwValuePtr string;
 } PwStringIOCtorArgs;
 
-#define pw_create_string_io(str) _Generic((str), \
-             char*: _pw_create_string_io_u8_wrapper,  \
-          char8_t*: _pw_create_string_io_u8,          \
-         char32_t*: _pw_create_string_io_u32,         \
-        PwValuePtr: _pw_create_string_io              \
-    )((str))
+#define pw_create_string_io(str, result) _Generic((str), \
+             char*: _pw_create_string_io_ascii,  \
+          char8_t*: _pw_create_string_io_u8,     \
+         char32_t*: _pw_create_string_io_u32,    \
+        PwValuePtr: _pw_create_string_io         \
+    )((str), (result))
 
-PwResult _pw_create_string_io_u8  (char8_t* str);
-PwResult _pw_create_string_io_u32 (char32_t* str);
-PwResult _pw_create_string_io     (PwValuePtr str);
+[[nodiscard]] bool _pw_create_string_io_u8 (char8_t* str,   PwValuePtr result);
+[[nodiscard]] bool _pw_create_string_io_u32(char32_t* str,  PwValuePtr result);
+[[nodiscard]] bool _pw_create_string_io    (PwValuePtr str, PwValuePtr result);
 
-static inline PwResult _pw_create_string_io_u8_wrapper(char* str)
+[[nodiscard]] static inline bool _pw_create_string_io_ascii(char* str, PwValuePtr result)
 {
-    return _pw_create_string_io_u8((char8_t*) str);
+    return _pw_create_string_io_u8((char8_t*) str, result);
 }
 
 #ifdef __cplusplus

@@ -1,46 +1,47 @@
+#include "src/pw_alloc.h"
 #include "src/pw_struct_internal.h"
 
-static PwResult call_init(PwValuePtr self, void* ctor_args, PwTypeId type_id)
+[[nodiscard]] static bool call_init(PwValuePtr self, void* ctor_args, PwTypeId type_id)
 {
     if (type_id == PwTypeId_Struct) {
         // reached the bottom
-        return PwOK();
+        return true;
     }
 
     PwType* type = _pw_types[type_id];
     PwTypeId ancestor_id = type->ancestor_id;
 
-    PwValue result = call_init(self, ctor_args, ancestor_id);
-    if (pw_ok(&result)) {
-        // initialized all ancestors, okay to call init for this type_id
-        PwMethodInit init = type->init;
-        if (init) {
-            result = init(self, ctor_args);
-            if (pw_error(&result)) {
-                // ancestor init failed, call fini for already called init
-                while (type->id != PwTypeId_Struct) {
-                    PwMethodFini fini = type->fini;
-                    if (fini) {
-                        fini(self);
-                    }
-                    type = pw_ancestor_of(type->id);
+    if (!call_init(self, ctor_args, ancestor_id)) {
+        return false;
+    }
+    // initialized all ancestors, okay to call init for this type_id
+    PwMethodInit init = type->init;
+    if (init) {
+        if (!init(self, ctor_args)) {
+            // ancestor init failed, call fini for already called init
+            while (type->id != PwTypeId_Struct) {
+                PwMethodFini fini = type->fini;
+                if (fini) {
+                    fini(self);
                 }
+                type = pw_ancestor_of(type->id);
             }
+            return false;
         }
     }
-    return pw_move(&result);
+    return true;
 }
 
-PwResult _pw_struct_alloc(PwValuePtr self, void* ctor_args)
+[[nodiscard]] bool _pw_struct_alloc(PwValuePtr self, void* ctor_args)
 {
     PwType* type = pw_typeof(self);
 
     // allocate memory
 
     unsigned memsize = type->data_offset + type->data_size;
-    self->struct_data = type->allocator->allocate(memsize, true);
+    self->struct_data = _pw_alloc(self->type_id, memsize, true);
     if (!self->struct_data) {
-        return PwOOM();
+        return false;
     }
 
     self->struct_data->refcount = 1;
@@ -66,19 +67,17 @@ void _pw_struct_release(PwValuePtr self)
     type = pw_typeof(self);
 
     unsigned memsize = type->data_offset + type->data_size;
-    type->allocator->release((void**) &self->struct_data, memsize);
+    _pw_free(self->type_id, (void**) &self->struct_data, memsize);
 
     // reset value to Null
     self->type_id = PwTypeId_Null;
 }
 
-PwResult _pw_struct_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] bool _pw_struct_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
-    PwValue result = {
-        .type_id = type_id
-    };
-    pw_expect_ok( _pw_struct_alloc(&result, ctor_args) );
-    return pw_move(&result);
+    pw_destroy(result);
+    result->type_id = type_id;
+    return _pw_struct_alloc(result, ctor_args);
 }
 
 void _pw_struct_destroy(PwValuePtr self)
@@ -97,12 +96,11 @@ void _pw_struct_destroy(PwValuePtr self)
     _pw_struct_release(self);
 }
 
-PwResult _pw_struct_clone(PwValuePtr self)
+void _pw_struct_clone(PwValuePtr self)
 {
     if (self->struct_data) {
         self->struct_data->refcount++;
     }
-    return *self;
 }
 
 void _pw_struct_hash(PwValuePtr self, PwHashContext* ctx)
@@ -111,9 +109,10 @@ void _pw_struct_hash(PwValuePtr self, PwHashContext* ctx)
     _pw_hash_uint64(ctx, (uint64_t) self->struct_data);
 }
 
-PwResult _pw_struct_deepcopy(PwValuePtr self)
+[[nodiscard]] bool _pw_struct_deepcopy(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
 void _pw_dump_struct_data(FILE* fp, PwValuePtr value)
@@ -131,23 +130,24 @@ static void struct_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
     _pw_dump_struct_data(fp, self);
 }
 
-PwResult _pw_struct_to_string(PwValuePtr self)
+[[nodiscard]] bool _pw_struct_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-bool _pw_struct_is_true(PwValuePtr self)
+[[nodiscard]] bool _pw_struct_is_true(PwValuePtr self)
 {
     return false;
 }
 
-bool _pw_struct_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] bool _pw_struct_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     // basic Structs are empty and empty always equals empty
     return true;
 }
 
-bool _pw_struct_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] bool _pw_struct_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {

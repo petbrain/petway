@@ -1,7 +1,7 @@
 #include <errno.h>
 #include <stdlib.h>
 
-#include <include/pw_netutils.h>
+#include "include/pw_netutils.h"
 
 
 static inline bool end_of_line(PwValuePtr str, unsigned position)
@@ -12,12 +12,16 @@ static inline bool end_of_line(PwValuePtr str, unsigned position)
     return !pw_string_index_valid(str, position);
 }
 
-PwResult _pw_parse_unsigned(PwValuePtr str, unsigned start_pos, unsigned* end_pos, unsigned radix)
+[[nodiscard]] bool _pw_parse_unsigned(PwValuePtr str, unsigned start_pos,
+                                      unsigned* end_pos, unsigned radix, PwValuePtr result)
 {
-    PWDECL_Unsigned(result, 0);
+    pw_destroy(result);
+    *result = PwUnsigned(0);
+
     bool digit_seen = false;
     bool separator_seen = false;
     unsigned pos = start_pos;
+    bool ret = false;
     for(;;) {
         char32_t chr = pw_char_at(str, pos);
 
@@ -25,18 +29,18 @@ PwResult _pw_parse_unsigned(PwValuePtr str, unsigned start_pos, unsigned* end_po
         if (chr == '\'' || chr == '_') {
             if (separator_seen) {
                 // duplicate separator in the number
-                result = PwError(PW_ERROR_BAD_NUMBER);
+                pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
                 break;
             }
             if (!digit_seen) {
                 // eparator is not allowed in the beginning of number
-                result = PwError(PW_ERROR_BAD_NUMBER);
+                pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
                 break;
             }
             separator_seen = true;
             pos++;
             if (end_of_line(str, pos)) {
-                result = PwError(PW_ERROR_BAD_NUMBER);
+                pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
                 break;
             }
             continue;
@@ -52,37 +56,40 @@ PwResult _pw_parse_unsigned(PwValuePtr str, unsigned start_pos, unsigned* end_po
             } else if (chr >= '0' && chr <= '9') {
                 chr -= '0';
             } else if (!digit_seen) {
-                result = PwError(PW_ERROR_BAD_NUMBER);
+                pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
                 break;
             } else {
                 // not a digit, end of conversion
+                ret = true;
                 break;
             }
         } else if (chr >= '0' && chr < (char32_t) ('0' + radix)) {
             chr -= '0';
         } else if (!digit_seen) {
-            result = PwError(PW_ERROR_BAD_NUMBER);
+            pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
             break;
         } else {
             // not a digit, end of conversion
+            ret = true;
             break;
         }
-        if (result.unsigned_value > PW_UNSIGNED_MAX / radix) {
+        if (result->unsigned_value > PW_UNSIGNED_MAX / radix) {
             // overflow
-            result = PwError(PW_ERROR_NUMERIC_OVERFLOW);
+            pw_set_status(PwStatus(PW_ERROR_NUMERIC_OVERFLOW));
             break;
         }
-        PwType_Unsigned new_value = result.unsigned_value * radix + chr;
-        if (new_value < result.unsigned_value) {
+        PwType_Unsigned new_value = result->unsigned_value * radix + chr;
+        if (new_value < result->unsigned_value) {
             // overflow
-            result = PwError(PW_ERROR_NUMERIC_OVERFLOW);
+            pw_set_status(PwStatus(PW_ERROR_NUMERIC_OVERFLOW));
             break;
         }
-        result.unsigned_value = new_value;
+        result->unsigned_value = new_value;
 
         pos++;
         if (end_of_line(str, pos)) {
             // end of line, end of conversion
+            ret = true;
             break;
         }
         digit_seen = true;
@@ -90,7 +97,7 @@ PwResult _pw_parse_unsigned(PwValuePtr str, unsigned start_pos, unsigned* end_po
     if (end_pos) {
         *end_pos = pos;
     }
-    return result;
+    return ret;
 }
 
 static unsigned skip_digits(PwValuePtr str, unsigned pos)
@@ -108,13 +115,17 @@ static unsigned skip_digits(PwValuePtr str, unsigned pos)
     return pos;
 }
 
-PwResult _pw_parse_number(PwValuePtr str, unsigned start_pos, int sign, unsigned* end_pos, char32_t* allowed_terminators)
+[[nodiscard]] bool _pw_parse_number(PwValuePtr str, unsigned start_pos,
+                                    int sign, unsigned* end_pos, char32_t* allowed_terminators,
+                                    PwValuePtr result)
 {
+    pw_destroy(result);
+    *result = PwSigned(0);
+
     unsigned pos = start_pos;
     unsigned radix = 10;
     bool is_float = false;
-    PWDECL_Unsigned(base, 0);
-    PWDECL_Signed(result, 0);
+    PwValue base = PW_UNSIGNED(0);
 
     char32_t chr = pw_char_at(str, pos);
     if (chr == '0') {
@@ -142,14 +153,14 @@ PwResult _pw_parse_number(PwValuePtr str, unsigned start_pos, int sign, unsigned
                 break;
         }
         if (end_of_line(str, pos)) {
-            result = PwError(PW_ERROR_BAD_NUMBER);
-            goto out;
+            pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
+            goto error;
         }
     }
 
-    base = _pw_parse_unsigned(str, pos, &pos, radix);
-    pw_return_if_error(&base);
-
+    if (!_pw_parse_unsigned(str, pos, &pos, radix, &base)) {
+        goto error;
+    }
     if (end_of_line(str, pos)) {
         goto done;
     }
@@ -160,8 +171,8 @@ PwResult _pw_parse_number(PwValuePtr str, unsigned start_pos, int sign, unsigned
         if (radix != 10) {
 decimal_float_only:
             // only decimal representation is supported for floating point numbers
-            result = PwError(PW_ERROR_BAD_NUMBER);
-            goto out;
+            pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
+            goto error;
         }
         is_float = true;
         pos = skip_digits(str, pos + 1);
@@ -187,14 +198,14 @@ decimal_float_only:
         unsigned next_pos = skip_digits(str, pos);
         if (next_pos == pos) {
             // bad exponent
-            result = PwError(PW_ERROR_BAD_NUMBER);
-            goto out;
+            pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
+            goto error;
         }
         pos = next_pos;
 
     } else if ( ! (pw_isspace(chr) || (allowed_terminators && u32_strchr(allowed_terminators, chr)))) {
-        result = PwError(PW_ERROR_BAD_NUMBER);
-        goto out;
+        pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
+        goto error;
     }
 
 done:
@@ -206,42 +217,47 @@ done:
         errno = 0;
         double n = strtod(number, nullptr);
         if (errno == ERANGE) {
-            result = PwError(PW_ERROR_NUMERIC_OVERFLOW);
-            goto out;
+            pw_set_status(PwStatus(PW_ERROR_NUMERIC_OVERFLOW));
+            goto error;
         } else if (errno) {
             // floating point conversion error
-            result = PwError(PW_ERROR_BAD_NUMBER);
-            goto out;
+            pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
+            goto error;
         }
         if (sign < 0 && n != 0.0) {
             n = -n;
         }
-        result = PwFloat(n);
+        *result = PwFloat(n);
     } else {
         // make integer
         if (base.unsigned_value > PW_SIGNED_MAX) {
             if (sign < 0) {
-                result = PwError(PW_ERROR_NUMERIC_OVERFLOW);
-                goto out;
+                pw_set_status(PwStatus(PW_ERROR_NUMERIC_OVERFLOW));
+                goto error;
             } else {
-                result = PwUnsigned(base.unsigned_value);
+                *result = PwUnsigned(base.unsigned_value);
             }
         } else {
             if (sign < 0 && base.unsigned_value) {
-                result = PwSigned(-base.unsigned_value);
+                *result = PwSigned(-base.unsigned_value);
             } else {
-                result = PwSigned(base.unsigned_value);
+                *result = PwSigned(base.unsigned_value);
             }
         }
     }
-out:
     if (end_pos) {
         *end_pos = pos;
     }
-    return pw_move(&result);
+    return true;
+
+error:
+    if (end_pos) {
+        *end_pos = pos;
+    }
+    return false;
 }
 
-PwResult pw_parse_number(PwValuePtr str)
+[[nodiscard]] bool pw_parse_number(PwValuePtr str, PwValuePtr result)
 {
     int sign = 1;
     unsigned start_pos = pw_string_skip_spaces(str, 0);
@@ -253,7 +269,7 @@ PwResult pw_parse_number(PwValuePtr str)
         sign = -1;
         start_pos++;
     }
-    return _pw_parse_number(str, start_pos, sign, nullptr, nullptr);
+    return _pw_parse_number(str, start_pos, sign, nullptr, nullptr, result);
 }
 
 static bool parse_nanosecond_frac(PwValuePtr str, unsigned* pos, uint32_t* result)
@@ -300,9 +316,12 @@ static bool parse_nanosecond_frac(PwValuePtr str, unsigned* pos, uint32_t* resul
     return true;
 }
 
-PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_pos, char32_t* allowed_terminators)
+[[nodiscard]] bool _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_pos,
+                                      char32_t* allowed_terminators, PwValuePtr result)
 {
-    PWDECL_DateTime(result);
+    pw_destroy(result);
+    *result = PwDateTime();
+
     unsigned pos = start_pos;
     char32_t chr;
 
@@ -310,8 +329,8 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     for (unsigned i = 0; i < 4; i++, pos++) {
         chr = pw_char_at(str, pos);
         if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
-        result.year *= 10;
-        result.year += chr - '0';
+        result->year *= 10;
+        result->year += chr - '0';
     }
     // skip optional separator
     if (pw_char_at(str, pos) == '-') {
@@ -321,8 +340,8 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
         if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
-        result.month *= 10;
-        result.month += chr - '0';
+        result->month *= 10;
+        result->month += chr - '0';
     }
     // skip optional separator
     if (pw_char_at(str, pos) == '-') {
@@ -332,8 +351,8 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
         if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
-        result.day *= 10;
-        result.day += chr - '0';
+        result->day *= 10;
+        result->day += chr - '0';
     }
     // skip optional separator
     chr = pw_char_at(str, pos);
@@ -349,8 +368,8 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
         if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
-        result.hour *= 10;
-        result.hour += chr - '0';
+        result->hour *= 10;
+        result->hour += chr - '0';
     }
     // skip optional separator
     if (pw_char_at(str, pos) == ':') {
@@ -360,8 +379,8 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
         if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
-        result.minute *= 10;
-        result.minute += chr - '0';
+        result->minute *= 10;
+        result->minute += chr - '0';
     }
     // skip optional separator
     if (pw_char_at(str, pos) == ':') {
@@ -371,8 +390,8 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     for (unsigned i = 0; i < 2; i++, pos++) {
         chr = pw_char_at(str, pos);
         if (!pw_is_ascii_digit(chr)) { goto bad_datetime; }
-        result.second *= 10;
-        result.second += chr - '0';
+        result->second *= 10;
+        result->second += chr - '0';
     }
     // check optional parts
     chr = pw_char_at(str, pos);
@@ -383,7 +402,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
     if ( chr == '.') {
         // parse nanoseconds
         pos++;
-        if (!parse_nanosecond_frac(str, &pos, &result.nanosecond)) {
+        if (!parse_nanosecond_frac(str, &pos, &result->nanosecond)) {
             goto bad_datetime;
         }
         chr = pw_char_at(str, pos);
@@ -420,7 +439,7 @@ PwResult _pw_parse_datetime(PwValuePtr str, unsigned start_pos, unsigned* end_po
                 }
             }
         }
-        result.gmt_offset = sign * offset_hour * 60 + offset_minute;
+        result->gmt_offset = sign * offset_hour * 60 + offset_minute;
     }
 
 end_of_datetime:
@@ -431,34 +450,41 @@ end_of_datetime:
     if ( ! (pw_isspace(chr) || (allowed_terminators && u32_strchr(allowed_terminators, chr)))) {
         goto bad_datetime;
     }
-    goto out;
-
-bad_datetime:
-    result = PwError(PW_ERROR_BAD_DATETIME);
 
 out:
     if (end_pos) {
         *end_pos = pos;
     }
-    return pw_move(&result);
+    return true;
+
+bad_datetime:
+    pw_set_status(PwStatus(PW_ERROR_BAD_DATETIME));
+    if (end_pos) {
+        *end_pos = pos;
+    }
+    return false;
 }
 
 
-PwResult pw_parse_datetime(PwValuePtr str)
+[[nodiscard]] bool pw_parse_datetime(PwValuePtr str, PwValuePtr result)
 {
-    return _pw_parse_datetime(str, pw_string_skip_spaces(str, 0), nullptr, nullptr);
+    return _pw_parse_datetime(str, pw_string_skip_spaces(str, 0), nullptr, nullptr, result);
 }
 
 
-PwResult _pw_parse_timestamp(PwValuePtr str, unsigned start_pos, unsigned* end_pos, char32_t* allowed_terminators)
+[[nodiscard]] bool _pw_parse_timestamp(PwValuePtr str, unsigned start_pos, unsigned* end_pos,
+                                       char32_t* allowed_terminators, PwValuePtr result)
 {
-    PWDECL_Timestamp(result);
+    pw_destroy(result);
+    *result = PwTimestamp();
 
     unsigned pos;
-    PwValue seconds = _pw_parse_unsigned(str, start_pos, &pos, 10);
-    pw_return_if_error(&seconds);
+    PwValue seconds = PW_NULL;
+    if (!_pw_parse_unsigned(str, start_pos, &pos, 10, &seconds)) {
+        return false;
+    }
 
-    result.ts_seconds = seconds.unsigned_value;
+    result->ts_seconds = seconds.unsigned_value;
 
     if (end_of_line(str, pos)) {
         goto out;
@@ -467,7 +493,7 @@ PwResult _pw_parse_timestamp(PwValuePtr str, unsigned start_pos, unsigned* end_p
     if ( chr == '.') {
         // parse nanoseconds
         pos++;
-        if (!parse_nanosecond_frac(str, &pos, &result.ts_nanoseconds)) {
+        if (!parse_nanosecond_frac(str, &pos, &result->ts_nanoseconds)) {
             goto bad_timestamp;
         }
     }
@@ -478,20 +504,23 @@ PwResult _pw_parse_timestamp(PwValuePtr str, unsigned start_pos, unsigned* end_p
     if ( ! (pw_isspace(chr) || (allowed_terminators && u32_strchr(allowed_terminators, chr)))) {
         goto bad_timestamp;
     }
-    goto out;
-
-bad_timestamp:
-    result = PwError(PW_ERROR_BAD_TIMESTAMP);
 
 out:
     if (end_pos) {
         *end_pos = pos;
     }
-    return pw_move(&result);
+    return true;
+
+bad_timestamp:
+    pw_set_status(PwStatus(PW_ERROR_BAD_TIMESTAMP));
+    if (end_pos) {
+        *end_pos = pos;
+    }
+    return false;
 }
 
 
-PwResult pw_parse_timestamp(PwValuePtr str)
+[[nodiscard]] bool pw_parse_timestamp(PwValuePtr str, PwValuePtr result)
 {
-    return _pw_parse_timestamp(str, pw_string_skip_spaces(str, 0), nullptr, nullptr);
+    return _pw_parse_timestamp(str, pw_string_skip_spaces(str, 0), nullptr, nullptr, result);
 }

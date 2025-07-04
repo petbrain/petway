@@ -4,10 +4,11 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#include <include/pw_args.h>
-#include <include/pw_netutils.h>
-#include <include/pw_socket.h>
-#include <src/pw_struct_internal.h>
+#include "include/pw_args.h"
+#include "include/pw_netutils.h"
+#include "include/pw_socket.h"
+#include "src/pw_charptr_internal.h"
+#include "src/pw_struct_internal.h"
 
 // status codes
 uint16_t PW_ERROR_BAD_ADDRESS_FAMILY = 0;
@@ -126,7 +127,7 @@ PwTypeId PwTypeId_Socket = 0;
 
 static PwType socket_type;
 
-static PwResult socket_init(PwValuePtr self, void* ctor_args)
+[[nodiscard]] static bool socket_init(PwValuePtr self, void* ctor_args)
 {
     PwSocketCtorArgs* args = ctor_args;
     _PwSocketData* sd = _pw_socket_data_ptr(self);
@@ -134,7 +135,8 @@ static PwResult socket_init(PwValuePtr self, void* ctor_args)
     if (args) {
         sd->sock = socket(args->domain, args->type, args->protocol);
         if (sd->sock == -1) {
-            return PwErrno(errno);
+            pw_set_status(PwErrno(errno));
+            return false;
         }
 
         sd->domain = args->domain;
@@ -146,7 +148,7 @@ static PwResult socket_init(PwValuePtr self, void* ctor_args)
         sd->sock = -1;
     }
 
-    return PwOK();
+    return true;
 }
 
 static void socket_fini(PwValuePtr self)
@@ -262,7 +264,7 @@ static void socket_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
 
 unsigned PwInterfaceId_Socket = 0;
 
-static PwResult make_address(int domain, PwValuePtr addr, socklen_t* ss_addr_size)
+[[nodiscard]] static bool make_address(int domain, PwValuePtr addr, socklen_t* ss_addr_size, PwValuePtr result)
 /*
  * Helper function for bind and connect.
  *
@@ -277,76 +279,91 @@ static PwResult make_address(int domain, PwValuePtr addr, socklen_t* ss_addr_siz
     if (pw_is_sockaddr(addr)) {
         _PwSockAddrData* sa = _pw_sockaddr_data_ptr(addr);
         if (sa->netmask != 0) {
-            return PwError(PW_ERROR_HOST_ADDRESS_EXPECTED);
+            pw_set_status(PwStatus(PW_ERROR_HOST_ADDRESS_EXPECTED));
+            return false;
         }
         if (sa->addr.ss_family != domain) {
-            return PwError(PW_ERROR_ADDRESS_FAMILY_MISMATCH);
+            pw_set_status(PwStatus(PW_ERROR_ADDRESS_FAMILY_MISMATCH));
+            return false;
         }
-        return pw_clone(addr);
+        pw_clone2(addr, result);
+        return true;
     }
 
-    // convert CharPtr to String
-    PwValue addr_str = pw_clone(addr);
+    PwValue addr_str = PW_NULL;
+    if (pw_is_charptr(addr)) {
+        if (!pw_charptr_to_string(addr, &addr_str)) {
+            return false;
+        }
+    } else {
+        pw_clone2(addr, &addr_str);
+    }
 
     pw_assert_string(&addr_str);
     switch (domain) {
         case AF_LOCAL: {
-            PwValue result = pw_create(PwTypeId_SockAddr);
-            pw_return_if_error(&result);
+            if (!pw_create(PwTypeId_SockAddr, result)) {
+                return false;
+            }
 
-            _PwSockAddrData* sa = _pw_sockaddr_data_ptr(&result);
+            _PwSockAddrData* sa = _pw_sockaddr_data_ptr(result);
             sa->addr.ss_family = AF_LOCAL;
 
             unsigned len = pw_strlen_in_utf8(&addr_str);
             if (len >= sizeof(((struct sockaddr_un*)0)->sun_path)) {
-                return PwError(PW_ERROR_SOCKET_NAME_TOO_LONG);
+                pw_set_status(PwStatus(PW_ERROR_SOCKET_NAME_TOO_LONG));
+                return false;
             }
             pw_string_to_utf8_buf(&addr_str, ((struct sockaddr_un*) &sa->addr)->sun_path);
             *ss_addr_size = offsetof(struct sockaddr_un, sun_path) + len + 1;
-            return pw_move(&result);
+            return true;
         }
         case AF_INET:
         case AF_INET6:
-            return pw_parse_inet_address(&addr_str);
+            return pw_parse_inet_address(&addr_str, result);
 
         default:
             pw_panic("Address family %d is not supported yet\n", domain);
     }
 }
 
-static PwResult socket_bind(PwValuePtr self, PwValuePtr local_addr)
+[[nodiscard]] static bool socket_bind(PwValuePtr self, PwValuePtr local_addr)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
     pw_destroy(&sd->local_addr);
 
     socklen_t addr_size;
-    PwValue addr = make_address(sd->domain, local_addr, &addr_size);
-    pw_return_if_error(&addr);
+    PwValue addr = PW_NULL;
+    if (!make_address(sd->domain, local_addr, &addr_size, &addr)) {
+        return false;
+    }
 
-    sd->local_addr = pw_move(&addr);
+    pw_move(&addr, &sd->local_addr);
     _PwSockAddrData* sa = _pw_sockaddr_data_ptr(&sd->local_addr);
 
     if (bind(sd->sock, (struct sockaddr*) &sa->addr, addr_size) == 0) {
-        return PwOK();
+        return true;
     } else {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     }
 }
 
-static PwResult socket_reuse_addr(PwValuePtr self, bool reuse)
+[[nodiscard]] static bool socket_reuse_addr(PwValuePtr self, bool reuse)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
     int i = reuse;
     if (setsockopt(sd->sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i)) < 0) {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     } else {
-        return PwOK();
+        return true;
     }
 }
 
-static PwResult socket_set_nonblocking(PwValuePtr self, bool mode)
+[[nodiscard]] static bool socket_set_nonblocking(PwValuePtr self, bool mode)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
@@ -357,13 +374,14 @@ static PwResult socket_set_nonblocking(PwValuePtr self, bool mode)
         flags &= ~O_NONBLOCK;
     }
     if (fcntl(sd->sock, F_SETFL, flags) == -1) {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     } else {
-        return PwOK();
+        return true;
     }
 }
 
-static PwResult socket_listen(PwValuePtr self, int backlog)
+[[nodiscard]] static bool socket_listen(PwValuePtr self, int backlog)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
@@ -372,26 +390,29 @@ static PwResult socket_listen(PwValuePtr self, int backlog)
     }
     if (listen(sd->sock, backlog) == 0) {
         sd->listen_backlog = backlog;
-        return PwOK();
+        return true;
     } else {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     }
 }
 
-static PwResult socket_accept(PwValuePtr self)
+[[nodiscard]] static bool socket_accept(PwValuePtr self, PwValuePtr result)
 {
     // create uninitialized socket
-    PwValue result = pw_create(self->type_id);
-    pw_return_if_error(&result);
+    if (!pw_create(self->type_id, result)) {
+        return false;
+    }
 
     // get pointers to socket data structures
     _PwSocketData* sd_lsnr = _pw_socket_data_ptr(self);
-    _PwSocketData* sd_new  = _pw_socket_data_ptr(&result);
+    _PwSocketData* sd_new  = _pw_socket_data_ptr(result);
 
     // initialize addresses for new socket
-    sd_new->local_addr = pw_clone(&sd_lsnr->local_addr);
-    sd_new->remote_addr = pw_create(PwTypeId_SockAddr);
-    pw_return_if_error(&sd_new->remote_addr);
+    pw_clone2(&sd_lsnr->local_addr, &sd_new->local_addr);
+    if (!pw_create(PwTypeId_SockAddr, &sd_new->remote_addr)) {
+        return false;
+    }
 
     // get pointer to remote address structure
     _PwSockAddrData* sa_remote = _pw_sockaddr_data_ptr(&sd_new->remote_addr);
@@ -400,27 +421,30 @@ static PwResult socket_accept(PwValuePtr self)
     socklen_t addrlen = sizeof(sa_remote->addr);
     sd_new->sock = accept(sd_lsnr->sock, (struct sockaddr*) &sa_remote->addr,  &addrlen);
     if (sd_new->sock < 0) {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     }
     // initialize other fields (they are mainly for informational purposes)
     sd_new->domain = sd_lsnr->domain;
     sd_new->type   = sd_lsnr->type;
     sd_new->proto  = sd_lsnr->proto;
 
-    return pw_move(&result);
+    return true;
 }
 
-static PwResult socket_connect(PwValuePtr self, PwValuePtr remote_addr)
+[[nodiscard]] static bool socket_connect(PwValuePtr self, PwValuePtr remote_addr)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
     pw_destroy(&sd->local_addr);
 
     socklen_t addr_size;
-    PwValue addr = make_address(sd->domain, remote_addr, &addr_size);
-    pw_return_if_error(&addr);
+    PwValue addr = PW_NULL;
+    if (!make_address(sd->domain, remote_addr, &addr_size, &addr)) {
+        return false;
+    }
 
-    sd->remote_addr = pw_move(&addr);
+    pw_move(&addr, &sd->remote_addr);
     _PwSockAddrData* sa = _pw_sockaddr_data_ptr(&sd->remote_addr);
 
     int rc;
@@ -429,23 +453,25 @@ static PwResult socket_connect(PwValuePtr self, PwValuePtr remote_addr)
     } while (rc != 0 && errno == EINTR);
 
     if (rc == 0) {
-        return PwOK();
+        return true;
     }
     if (errno == EAGAIN && sa->addr.ss_family == AF_LOCAL) {
         // make it consistent
         errno = EINPROGRESS;
     }
-    return PwErrno(errno);
+    pw_set_status(PwErrno(errno));
+    return false;
 }
 
-static PwResult socket_shutdown(PwValuePtr self, int how)
+[[nodiscard]] static bool socket_shutdown(PwValuePtr self, int how)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
     if (shutdown(sd->sock, how) == 0) {
-        return PwOK();
+        return true;
     } else {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     }
 }
 
@@ -463,7 +489,7 @@ static PwInterface_Socket socket_interface = {
  * Reader and writer interfaces
  */
 
-static PwResult socket_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
+[[nodiscard]] static bool socket_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
@@ -473,14 +499,15 @@ static PwResult socket_read(PwValuePtr self, void* buffer, unsigned buffer_size,
     } while (result < 0 && errno == EINTR);
 
     if (result < 0) {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     } else {
         *bytes_read = (unsigned) result;
-        return PwOK();
+        return true;
     }
 }
 
-static PwResult socket_write(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written)
+[[nodiscard]] static bool socket_write(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
@@ -490,10 +517,11 @@ static PwResult socket_write(PwValuePtr self, void* data, unsigned size, unsigne
     } while (result < 0 && errno == EINTR);
 
     if (result < 0) {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     } else {
         *bytes_written = (unsigned) result;
-        return PwOK();
+        return true;
     }
 }
 

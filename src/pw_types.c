@@ -17,9 +17,10 @@ static PwTypeId num_pw_types = 0;
  * Null type
  */
 
-static PwResult null_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool null_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
-    return PwNull();
+    pw_destroy(result);
+    return true;
 }
 
 static void null_hash(PwValuePtr self, PwHashContext* ctx)
@@ -33,22 +34,24 @@ static void null_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inde
     fputc('\n', fp);
 }
 
-static PwResult null_to_string(PwValuePtr self)
+[[nodiscard]] static bool null_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwString_1_12(4, 'n', 'u', 'l', 'l', 0, 0, 0, 0, 0, 0, 0, 0);
+    pw_destroy(result);
+    *result = PwString(4, "null");
+    return true;
 }
 
-static bool null_is_true(PwValuePtr self)
+[[nodiscard]] static bool null_is_true(PwValuePtr self)
 {
     return false;
 }
 
-static bool null_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool null_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return true;
 }
 
-static bool null_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool null_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -91,10 +94,12 @@ static PwType null_type = {
  * Bool type
  */
 
-static PwResult bool_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool bool_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
-    return PwBool(false);
+    pw_destroy(result);
+    *result = PwBool(false);
+    return true;
 }
 
 static void bool_hash(PwValuePtr self, PwHashContext* ctx)
@@ -110,26 +115,28 @@ static void bool_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inde
     fprintf(fp, ": %s\n", self->bool_value? "true" : "false");
 }
 
-static PwResult bool_to_string(PwValuePtr self)
+[[nodiscard]] static bool bool_to_string(PwValuePtr self, PwValuePtr result)
 {
+    pw_destroy(result);
     if (self->bool_value) {
-        return PwString_1_12(4, 't', 'r', 'u', 'e', 0, 0, 0, 0, 0, 0, 0, 0);
+        *result = PwString(4, "true");
     } else {
-        return PwString_1_12(5, 'f', 'a', 'l', 's', 'e', 0, 0, 0, 0, 0, 0, 0);
+        *result = PwString(5, "false");
     }
+    return true;
 }
 
-static bool bool_is_true(PwValuePtr self)
+[[nodiscard]] static bool bool_is_true(PwValuePtr self)
 {
     return self->bool_value;
 }
 
-static bool bool_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool bool_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return self->bool_value == other->bool_value;
 }
 
-static bool bool_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool bool_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -166,9 +173,10 @@ static PwType bool_type = {
  * Abstract Integer type
  */
 
-static PwResult int_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool int_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
 static void int_hash(PwValuePtr self, PwHashContext* ctx)
@@ -182,22 +190,23 @@ static void int_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inden
     fputs(": abstract\n", fp);
 }
 
-static PwResult int_to_string(PwValuePtr self)
+[[nodiscard]] static bool int_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool int_is_true(PwValuePtr self)
+[[nodiscard]] static bool int_is_true(PwValuePtr self)
 {
     return self->signed_value;
 }
 
-static bool int_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool int_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return true;
 }
 
-static bool int_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool int_equal(PwValuePtr self, PwValuePtr other)
 {
     return false;
 }
@@ -227,10 +236,12 @@ static PwType int_type = {
  * Signed type
  */
 
-static PwResult signed_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool signed_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
-    return PwSigned(0);
+    pw_destroy(result);
+    *result = PwSigned(0);
+    return true;
 }
 
 static void signed_hash(PwValuePtr self, PwHashContext* ctx)
@@ -250,22 +261,24 @@ static void signed_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
     fprintf(fp, ": %lld\n", (long long) self->signed_value);
 }
 
-static PwResult signed_to_string(PwValuePtr self)
+[[nodiscard]] static bool signed_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_destroy(result);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool signed_is_true(PwValuePtr self)
+[[nodiscard]] static bool signed_is_true(PwValuePtr self)
 {
     return self->signed_value;
 }
 
-static bool signed_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool signed_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return self->signed_value == other->signed_value;
 }
 
-static bool signed_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool signed_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -319,10 +332,12 @@ static PwType signed_type = {
  * Unsigned type
  */
 
-static PwResult unsigned_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool unsigned_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
-    return PwUnsigned(0);
+    pw_destroy(result);
+    *result = PwUnsigned(0);
+    return true;
 }
 
 static void unsigned_hash(PwValuePtr self, PwHashContext* ctx)
@@ -339,22 +354,24 @@ static void unsigned_dump(PwValuePtr self, FILE* fp, int first_indent, int next_
     fprintf(fp, ": %llu\n", (unsigned long long) self->unsigned_value);
 }
 
-static PwResult unsigned_to_string(PwValuePtr self)
+[[nodiscard]] static bool unsigned_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_destroy(result);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool unsigned_is_true(PwValuePtr self)
+[[nodiscard]] static bool unsigned_is_true(PwValuePtr self)
 {
     return self->unsigned_value;
 }
 
-static bool unsigned_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool unsigned_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return self->unsigned_value == other->unsigned_value;
 }
 
-static bool unsigned_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool unsigned_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -408,10 +425,12 @@ static PwType unsigned_type = {
  * Float type
  */
 
-static PwResult float_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool float_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
-    return PwFloat(0.0);
+    pw_destroy(result);
+    *result = PwFloat(0.0);
+    return true;
 }
 
 static void float_hash(PwValuePtr self, PwHashContext* ctx)
@@ -427,22 +446,24 @@ static void float_dump(PwValuePtr self, FILE* fp, int first_indent, int next_ind
     fprintf(fp, ": %f\n", self->float_value);
 }
 
-static PwResult float_to_string(PwValuePtr self)
+[[nodiscard]] static bool float_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_destroy(result);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool float_is_true(PwValuePtr self)
+[[nodiscard]] static bool float_is_true(PwValuePtr self)
 {
     return self->float_value;
 }
 
-static bool float_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool float_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return self->float_value == other->float_value;
 }
 
-static bool float_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool float_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -485,10 +506,12 @@ static PwType float_type = {
  * DateTime type
  */
 
-static PwResult datetime_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool datetime_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
-    return PwDateTime();
+    pw_destroy(result);
+    *result = PwDateTime();
+    return true;
 }
 
 static void datetime_hash(PwValuePtr self, PwHashContext* ctx)
@@ -532,18 +555,20 @@ static void datetime_dump(PwValuePtr self, FILE* fp, int first_indent, int next_
     fputc('\n', fp);
 }
 
-static PwResult datetime_to_string(PwValuePtr self)
+[[nodiscard]] static bool datetime_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_destroy(result);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool datetime_is_true(PwValuePtr self)
+[[nodiscard]] static bool datetime_is_true(PwValuePtr self)
 {
     return self->year && self->month && self->day
            && self->hour && self->minute && self->second && self->nanosecond;
 }
 
-static bool datetime_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool datetime_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return self->year       == other->year &&
            self->month      == other->month &&
@@ -555,7 +580,7 @@ static bool datetime_equal_sametype(PwValuePtr self, PwValuePtr other)
            self->gmt_offset == other->gmt_offset;
 }
 
-static bool datetime_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool datetime_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -590,10 +615,12 @@ static PwType datetime_type = {
  * Timestamp type
  */
 
-static PwResult timestamp_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool timestamp_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
-    return PwTimestamp();
+    pw_destroy(result);
+    *result = PwTimestamp();
+    return true;
 }
 
 static void timestamp_hash(PwValuePtr self, PwHashContext* ctx)
@@ -617,25 +644,26 @@ static void timestamp_dump(PwValuePtr self, FILE* fp, int first_indent, int next
     fputc('\n', fp);
 }
 
-static PwResult timestamp_to_string(PwValuePtr self)
+[[nodiscard]] static bool timestamp_to_string(PwValuePtr self, PwValuePtr result)
 {
+    pw_destroy(result);
     char buf[32];
     snprintf(buf, sizeof(buf), "%zu.%09u", self->ts_seconds, self->ts_nanoseconds);
-    return pw_create_string(buf);
+    return pw_create_string(buf, result);
 }
 
-static bool timestamp_is_true(PwValuePtr self)
+[[nodiscard]] static bool timestamp_is_true(PwValuePtr self)
 {
     return self->ts_seconds && self->ts_nanoseconds;
 }
 
-static bool timestamp_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool timestamp_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return self->ts_seconds == other->ts_seconds
         && self->ts_nanoseconds == other->ts_nanoseconds;
 }
 
-static bool timestamp_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool timestamp_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -670,10 +698,12 @@ static PwType timestamp_type = {
  * Pointer type
  */
 
-static PwResult ptr_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool ptr_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
-    return PwPtr(nullptr);
+    pw_destroy(result);
+    *result = PwPtr(nullptr);
+    return true;
 }
 
 static void ptr_hash(PwValuePtr self, PwHashContext* ctx)
@@ -689,22 +719,24 @@ static void ptr_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inden
     fprintf(fp, ": %p\n", self->ptr);
 }
 
-static PwResult ptr_to_string(PwValuePtr self)
+[[nodiscard]] static bool ptr_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_destroy(result);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool ptr_is_true(PwValuePtr self)
+[[nodiscard]] static bool ptr_is_true(PwValuePtr self)
 {
     return self->ptr;
 }
 
-static bool ptr_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool ptr_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return self->ptr == other->ptr;
 }
 
-static bool ptr_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool ptr_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {

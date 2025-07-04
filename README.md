@@ -13,11 +13,10 @@ The following environment variables are honoured by cmake:
 
 ## PW values
 
-PetWay is primarily targeted to 64-bit systems. All values are 128 bit wide.
+All values are 128 bit wide. The basic values, such as null, boolean, integer, etc.
+do not require memory allocation.
 
-The basic PW values do not require memory allocation.
-Functions never return pointers to PW value, they always return the whole 128 bit structure.
-It's the caller's responsibility to destroy values returned by functions.
+It's the caller's responsibility to destroy values.
 The simplest and natural way to do that is assigning them to automatically cleaned
 local variables declared with `PwValue`.
 
@@ -28,18 +27,23 @@ Yes, it's a `GNU` extension, but this is supported by `Clang` too.
 Sorry, msvc users.
 ```c
 {
-    PwValue myvar1 = PwUnsigned(123);
-    PwValue myvar2 = PwNull();
+    PwValue myvar1 = PW_UNSIGNED(123);
+    PwValue myvar2 = PW_NULL;
 
     // do the job
 }
 ```
 
+Note: PW_NULL is an initializer for variables, PwNull() is an rvalue (can be passed to functions as argument)
+
 Note, if `PwValue` is used in a loop body, always use nested scope (double curly brackets)
 to run destructors on each iteration:
 ```c
 for (unsigned i = 0, n = pw_array_length(my_array); i < n; i++) {{
-    PwValue value = pw_array_item(my_array, i);
+    PwValue value = PW_NULL;
+    if (!pw_array_item(my_array, i, &value)) {
+        return false;
+    }
 
     // process item
 
@@ -47,37 +51,6 @@ for (unsigned i = 0, n = pw_array_length(my_array); i < n; i++) {{
     // call pw_destroy(&item)
 }}
 ```
-
-Functions should use `PwResult` for the type of return value.
-Upon exit the value should be returned with `pw_move` that prevents automatic destruction:
-```c
-PwResult foo()
-{
-    PwValue result = PwBool(false);
-
-    // do the job
-
-    return pw_move(&result);
-}
-```
-
-Values are passed to functions by reference to make things a bit more efficient.
-Functions do not and should not modify arguments, they treat them as immutable.
-
-There are a few exceptions that accept PW values by value: `PwArray()`, `PwMap()`,
-`pw_strcat()`, and `pw_path()`. All they are variadic functions, and they destroy
-their arguments upon return. This is convenient to construct objects
-using function calls only, i.e.
-```
-PwValue my_map = PwMap(
-    PwCharPtr("foo"), get_answer(),
-    PwCharPtr("bar"), PwSigned(42)
-)
-```
-
-but extra care should be taken when passing local variables:
-always use `pw_clone()` for this purpose.
-
 
 ## Type system
 
@@ -118,18 +91,7 @@ to manage that.
 For single-byte character this limit is 12 which is more than double of average
 length of English word.
 
-`PwCharPtr` facilitates work with null-terminated C strings.
-Its `clone` method converts C strings to `PwString` and other types, such as
-array and map, take advantage of that:
-```c
-PwValue my_map = PwMap(
-    PwCharPtr(u8"สวัสดี"), PwChar32Ptr(U"สบาย"),
-    PwCharPtr("let's"),  PwCharPtr("go!")
-)
-// now my_map contains PW strings only
-```
-
-`char*` and `char8_t*` are treated equally, as UTF-8 strings.
+`PwCharPtr`: to be revised, its initial purpose was to facilitates working with null-terminated C strings.
 
 `Struct` type is the basic type for structured and `Compound` types.
 It handles data allocation and reference counting, although allocated data

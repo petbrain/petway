@@ -3,46 +3,43 @@
 
 #include "include/pw.h"
 
-PwResult _pw_get(PwValuePtr container, ...)
+bool _pw_get(PwValuePtr result, PwValuePtr container, ...)
 {
     PwValue obj = pw_clone(container);
-    PwValue result = PwNull();
     va_list ap;
     va_start(ap);
     for (;;) {{
         char* key = va_arg(ap, char*);
         if (key == nullptr) {
-            break;
+            va_end(ap);
+            return true;
         }
-        pw_destroy(&result);
+        pw_destroy(result);
 
         // get RandomAccess interface
         _PwInterface* interface = _pw_lookup_interface(obj.type_id, PwInterfaceId_RandomAccess);
         if (!interface) {
-            result = PwError(PW_ERROR_KEY_NOT_FOUND);
-            break;
+            va_end(ap);
+            pw_set_status(PwStatus(PW_ERROR_KEY_NOT_FOUND));
+            return false;
         }
         PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
 
         // get value by key
         PwValue k = PwCharPtr(key);
-        result = methods->get_item(&obj, &k);
-        if (pw_error(&result)) {
-            break;
+        if (!methods->get_item(&obj, &k, result)) {
+            va_end(ap);
+            return false;
         }
 
         // go to the deeper object
-        pw_destroy(&obj);
-        obj = pw_clone(&result);
+        pw_clone2(result, &obj);
     }}
-    va_end(ap);
-    return pw_move(&result);
 }
 
-PwResult _pw_set(PwValuePtr value, PwValuePtr container, ...)
+bool _pw_set(PwValuePtr value, PwValuePtr container, ...)
 {
     PwValue obj = pw_clone(container);
-    PwValue status = PwOK();
     va_list ap;
     va_start(ap);
 
@@ -50,7 +47,8 @@ PwResult _pw_set(PwValuePtr value, PwValuePtr container, ...)
     char* key = va_arg(ap, char*);
     if (key == nullptr) {
         va_end(ap);
-        return PwError(PW_ERROR_KEY_NOT_FOUND);
+        pw_set_status(PwStatus(PW_ERROR_KEY_NOT_FOUND));
+        return false;
     }
     for (;;) {{
         // get next key
@@ -61,59 +59,62 @@ PwResult _pw_set(PwValuePtr value, PwValuePtr container, ...)
         // get RandomAccess interface
         _PwInterface* interface = _pw_lookup_interface(obj.type_id, PwInterfaceId_RandomAccess);
         if (!interface) {
-            status = PwError(PW_ERROR_KEY_NOT_FOUND);
-            break;
+            pw_set_status(PwStatus(PW_ERROR_KEY_NOT_FOUND));
+            va_end(ap);
+            return false;
         }
         PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
 
         // get nested object by key
         PwValue k = PwCharPtr(key);
-        PwValue nested_obj = methods->get_item(&obj, &k);
-        if (pw_error(&nested_obj)) {
-            status = pw_move(&nested_obj);
-            break;
+        PwValue nested_obj = PW_NULL;
+        if (!methods->get_item(&obj, &k, &nested_obj)) {
+            va_end(ap);
+            return false;
         }
         // go to the deeper object
-        pw_destroy(&obj);
-        obj = pw_move(&nested_obj);
+        pw_move(&nested_obj, &obj);
         key = next_key;
     }}
     va_end(ap);
-    if (pw_ok(&status)) {
-        // set value
-        _PwInterface* interface = _pw_lookup_interface(obj.type_id, PwInterfaceId_RandomAccess);
-        if (!interface) {
-            status = PwError(PW_ERROR_KEY_NOT_FOUND);
-        } else {
-            PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
-            PwValue k = PwCharPtr(key);
-            status = methods->set_item(&obj, &k, value);
-        }
+
+    // set value
+    _PwInterface* interface = _pw_lookup_interface(obj.type_id, PwInterfaceId_RandomAccess);
+    if (!interface) {
+        pw_set_status(PwStatus(PW_ERROR_KEY_NOT_FOUND));
+        return false;
     }
-    return pw_move(&status);
+    PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
+    PwValue k = PwCharPtr(key);
+    return methods->set_item(&obj, &k, value);
 }
 
 extern char** environ;
 
-PwResult pw_read_environment()
+bool pw_read_environment(PwValuePtr result)
 {
-    PwValue result = PwMap();
+    if (!pw_create_map(result)) {
+        return false;
+    }
     for (char** env = environ;;) {{
         char* var = *env++;
         if (var == nullptr) {
-            break;
+            return true;
         }
         char* separator = strchr(var, '=');
         if (!separator) {
             continue;
         }
-        PwValue key = PwString();
-        pw_expect_true( pw_string_append_substring(&key, var, 0, separator - var) );
-
-        PwValue value = pw_create_string(separator + 1);
-        pw_return_if_error(&value);
-
-        pw_expect_ok( pw_map_update(&result, &key, &value) );
+        PwValue key = PwString(0, {});
+        if (!pw_string_append_substring(&key, var, 0, separator - var)) {
+            return false;
+        }
+        PwValue value = PW_NULL;
+        if (!pw_create_string(separator + 1, &value)) {
+            return false;
+        }
+        if (!pw_map_update(result, &key, &value)) {
+            return false;
+        }
     }}
-    return pw_move(&result);
 }

@@ -8,7 +8,7 @@ typedef struct {
     _PwValue iterable;  // cloned iterable value
 } _PwIterator;
 
-#define get_iterator_data_ptr(value)  ((_PwIterator*) _pw_get_data_ptr((value), PwTypeId_Iterator))
+#define get_iterator_ptr(value)  ((_PwIterator*) _pw_get_data_ptr((value), PwTypeId_Iterator))
 
 #ifdef __cplusplus
 }

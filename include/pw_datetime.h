@@ -6,17 +6,17 @@
 extern "C" {
 #endif
 
-PwResult pw_monotonic();
+[[nodiscard]] bool pw_monotonic(PwValuePtr result);
 /*
  * Return current timestamp.
  */
 
-PwResult pw_timestamp_sum(PwValuePtr a, PwValuePtr b);
+[[nodiscard]] _PwValue pw_timestamp_sum(PwValuePtr a, PwValuePtr b);
 /*
  * Calculate a + b
  */
 
-PwResult pw_timestamp_diff(PwValuePtr a, PwValuePtr b);
+[[nodiscard]] _PwValue pw_timestamp_diff(PwValuePtr a, PwValuePtr b);
 /*
  * Calculate  a - b
  */

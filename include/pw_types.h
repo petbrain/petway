@@ -37,8 +37,8 @@ extern "C" {
 #define PwTypeId_Map        16U
 
 // char* sub-types
-#define PW_CHARPTR    0
-#define PW_CHAR32PTR  1
+#define PwSubType_CharPtr    0
+#define PwSubType_Char32Ptr  1
 
 // limits
 #define PW_SIGNED_MAX  0x7fff'ffff'ffff'ffffLL
@@ -249,7 +249,6 @@ union __PwValue {
 typedef union __PwValue _PwValue;
 
 typedef _PwValue* PwValuePtr;
-typedef _PwValue  PwResult;  // alias for return values
 
 // make sure _PwValue structure is correct
 static_assert( offsetof(_PwValue, charptr_subtype) == 2 );
@@ -292,20 +291,20 @@ typedef struct __PwCompoundChain _PwCompoundChain;
 
 // Function types for the basic interface.
 // The basic interface is embedded into PwType structure.
-typedef PwResult (*PwMethodCreate)  (PwTypeId type_id, void* ctor_args);
-typedef void     (*PwMethodDestroy) (PwValuePtr self);
-typedef PwResult (*PwMethodClone)   (PwValuePtr self);
-typedef void     (*PwMethodHash)    (PwValuePtr self, PwHashContext* ctx);
-typedef PwResult (*PwMethodDeepCopy)(PwValuePtr self);
-typedef void     (*PwMethodDump)    (PwValuePtr self, FILE* fp, int first_indent, int next_indent, _PwCompoundChain* tail);
-typedef PwResult (*PwMethodToString)(PwValuePtr self);
-typedef bool     (*PwMethodIsTrue)  (PwValuePtr self);
-typedef bool     (*PwMethodEqual)   (PwValuePtr self, PwValuePtr other);
+typedef bool (*PwMethodCreate)  (PwTypeId type_id, void* ctor_args, PwValuePtr result);
+typedef void (*PwMethodDestroy) (PwValuePtr self);
+typedef void (*PwMethodClone)   (PwValuePtr self);  // this method never fails; called for assigned value to increment refcount
+typedef void (*PwMethodHash)    (PwValuePtr self, PwHashContext* ctx);
+typedef bool (*PwMethodDeepCopy)(PwValuePtr self, PwValuePtr result);
+typedef void (*PwMethodDump)    (PwValuePtr self, FILE* fp, int first_indent, int next_indent, _PwCompoundChain* tail);
+typedef bool (*PwMethodToString)(PwValuePtr self, PwValuePtr result);
+typedef bool (*PwMethodIsTrue)  (PwValuePtr self);
+typedef bool (*PwMethodEqual)   (PwValuePtr self, PwValuePtr other);
 
 // Function types for struct interface.
-// They modify the data in place and return status.
-typedef PwResult (*PwMethodInit)(PwValuePtr self, void* ctor_args);
-typedef void     (*PwMethodFini)(PwValuePtr self);
+// They modify the data in place.
+typedef bool (*PwMethodInit)(PwValuePtr self, void* ctor_args);
+typedef void (*PwMethodFini)(PwValuePtr self);
 
 
 typedef struct {
@@ -319,16 +318,16 @@ typedef struct {
 
     // basic interface
     // optional methods should be called only if not nullptr
-    PwMethodCreate   create;    // mandatory
-    PwMethodDestroy  destroy;   // optional if value does not have allocated data
-    PwMethodClone    clone;     // optional; if set, it is called by pw_clone()
-    PwMethodHash     hash;      // mandatory
-    PwMethodDeepCopy deepcopy;  // optional; XXX how it should work with subtypes is not clear yet
-    PwMethodDump     dump;      // mandatory
-    PwMethodToString to_string; // mandatory
-    PwMethodIsTrue   is_true;   // mandatory
-    PwMethodEqual    equal_sametype;  // mandatory
-    PwMethodEqual    equal;     // mandatory
+    [[ nodiscard]] PwMethodCreate   create;    // mandatory
+                   PwMethodDestroy  destroy;   // optional if value does not have allocated data
+                   PwMethodClone    clone;     // optional; if set, it is called by pw_clone()
+                   PwMethodHash     hash;      // mandatory
+    [[ nodiscard]] PwMethodDeepCopy deepcopy;  // optional; XXX how it should work with subtypes is not clear yet
+                   PwMethodDump     dump;      // mandatory
+    [[ nodiscard]] PwMethodToString to_string; // mandatory
+    [[ nodiscard]] PwMethodIsTrue   is_true;   // mandatory
+    [[ nodiscard]] PwMethodEqual    equal_sametype;  // mandatory
+    [[ nodiscard]] PwMethodEqual    equal;     // mandatory
 
     // struct data offset and size
     unsigned data_offset;
@@ -344,8 +343,8 @@ typedef struct {
      * If init fails for some subtype, _pw_struct_alloc calls fini method
      * for already called init in the pedigree.
      */
-    PwMethodInit init;
-    PwMethodFini fini;
+    [[ nodiscard]] PwMethodInit init;
+                   PwMethodFini fini;
 
     // other interfaces
     unsigned num_interfaces;
@@ -374,7 +373,7 @@ extern PwType** _pw_types;
 
 #define pw_ancestor_of(type_id) (_pw_types[_pw_types[type_id]->ancestor_id])
 
-static inline bool pw_is_subtype(PwValuePtr value, PwTypeId type_id)
+[[nodiscard]] static inline bool pw_is_subtype(PwValuePtr value, PwTypeId type_id)
 {
     PwTypeId t = value->type_id;
     for (;;) {
@@ -388,7 +387,7 @@ static inline bool pw_is_subtype(PwValuePtr value, PwTypeId type_id)
     }
 }
 
-PwTypeId _pw_add_type(PwType* type, ...);
+[[nodiscard]] PwTypeId _pw_add_type(PwType* type, ...);
 #define pw_add_type(type, ...)  _pw_add_type((type) __VA_OPT__(,) __VA_ARGS__, -1)
 /*
  * Add type to the first available position in the global list.
@@ -403,8 +402,8 @@ PwTypeId _pw_add_type(PwType* type, ...);
  * All errors in this function are considered as critical and cause program abort.
  */
 
-PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id,
-                     unsigned data_size, unsigned alignment, ...);
+[[nodiscard]] PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id,
+                                   unsigned data_size, unsigned alignment, ...);
 
 #define pw_subtype(type, name, ancestor_id, ...)  \
     _pw_subtype((type), (name), (ancestor_id), 0, 0 __VA_OPT__(,) __VA_ARGS__, -1)
@@ -452,254 +451,174 @@ PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id,
             PwValuePtr: _pw_get_type_name_from_value  \
     )(v)
 
-static inline char* _pw_get_type_name_by_id     (uint8_t type_id)  { return _pw_types[type_id]->name; }
-static inline char* _pw_get_type_name_from_value(PwValuePtr value) { return _pw_types[value->type_id]->name; }
+[[nodiscard]] static inline char* _pw_get_type_name_by_id     (uint8_t type_id)  { return _pw_types[type_id]->name; }
+[[nodiscard]] static inline char* _pw_get_type_name_from_value(PwValuePtr value) { return _pw_types[value->type_id]->name; }
 
 void pw_dump_types(FILE* fp);
 
 /****************************************************************
- * Constructors
- */
-
-#define pw_create(type_id)              _pw_types[type_id]->create((type_id), nullptr)
-#define pw_create2(type_id, ctor_args)  _pw_types[type_id]->create((type_id), (ctor_args))
-/*
  * Basic constructors.
  */
 
-/*
- * In-place declarations and rvalues
- *
- * __PWDECL_* macros define values that are not automatically cleaned. Use carefully.
- *
- * PWDECL_* macros define automatically cleaned values. Okay to use for local variables.
- *
- * Pw<Typename> macros define rvalues that should be destroyed either explicitly
- * or automatically, by assigning them to an automatically cleaned variable
- * or passing to PwArray(), PwMap() or other pw_*_va function that takes care of its arguments.
+#define pw_create(type_id, result)              _pw_types[type_id]->create((type_id), nullptr, (result))
+#define pw_create2(type_id, ctor_args, result)  _pw_types[type_id]->create((type_id), (ctor_args), (result))
+
+
+/****************************************************************
+ * Initializers and rvalues
  */
 
-#define __PWDECL_Null(name)  \
-    /* declare Null variable */  \
-    _PwValue name = {  \
-        .type_id = PwTypeId_Null  \
-    }
+#define PW_NULL {.type_id = PwTypeId_Null}
 
-#define PWDECL_Null(name)  _PW_VALUE_CLEANUP __PWDECL_Null(name)
-
-#define PwNull()  \
-    /* make Null rvalue */  \
+#define PwNull(initializer)  \
+    /* make Bool rvalue */  \
     ({  \
-        __PWDECL_Null(v);  \
+        _PwValue v = PW_NULL;  \
         v;  \
     })
 
-#define __PWDECL_Bool(name, initializer)  \
-    /* declare Bool variable */  \
-    _PwValue name = {  \
+#define PW_BOOL(initializer)  \
+    {  \
         ._integral_type_id = PwTypeId_Bool,  \
         .bool_value = (initializer)  \
     }
 
-#define PWDECL_Bool(name, initializer)  _PW_VALUE_CLEANUP __PWDECL_Bool((name), (initializer))
-
 #define PwBool(initializer)  \
     /* make Bool rvalue */  \
     ({  \
-        __PWDECL_Bool(v, (initializer));  \
+        _PwValue v = PW_BOOL(initializer);  \
         v;  \
     })
 
-#define __PWDECL_Signed(name, initializer)  \
-    /* declare Signed variable */  \
-    _PwValue name = {  \
+#define PW_SIGNED(initializer)  \
+    {  \
         ._integral_type_id = PwTypeId_Signed,  \
         .signed_value = (initializer),  \
     }
 
-#define PWDECL_Signed(name, initializer)  _PW_VALUE_CLEANUP __PWDECL_Signed((name), (initializer))
-
 #define PwSigned(initializer)  \
     /* make Signed rvalue */  \
     ({  \
-        __PWDECL_Signed(v, (initializer));  \
+        _PwValue v = PW_SIGNED(initializer);  \
         v;  \
     })
 
-#define __PWDECL_Unsigned(name, initializer)  \
-    /* declare Unsigned variable */  \
-    _PwValue name = {  \
+#define PW_UNSIGNED(initializer)  \
+    {  \
         ._integral_type_id = PwTypeId_Unsigned,  \
         .unsigned_value = (initializer)  \
     }
 
-#define PWDECL_Unsigned(name, initializer)  _PW_VALUE_CLEANUP __PWDECL_Unsigned((name), (initializer))
-
 #define PwUnsigned(initializer)  \
     /* make Unsigned rvalue */  \
     ({  \
-        __PWDECL_Unsigned(v, (initializer));  \
+        _PwValue v = PW_UNSIGNED(initializer);  \
         v;  \
     })
 
-#define __PWDECL_Float(name, initializer)  \
-    /* declare Float variable */  \
-    _PwValue name = {  \
+#define PW_FLOAT(initializer)  \
+    {  \
         ._integral_type_id = PwTypeId_Float,  \
         .float_value = (initializer)  \
     }
 
-#define PWDECL_Float(name, initializer)  _PW_VALUE_CLEANUP __PWDECL_Float((name), (initializer))
-
 #define PwFloat(initializer)  \
     /* make Float rvalue */  \
     ({  \
-        __PWDECL_Float(v, (initializer));  \
+        _PwValue v = PW_FLOAT(initializer);  \
         v;  \
     })
 
-// The very basic string declaration and rvalue, see pw_string.h for more macros:
-
-#define __PWDECL_String(name)  \
-    /* declare empty String variable */  \
-    _PwValue name = {  \
+#define PW_STRING(len, initializer)  \
+    /* declare String variable, character size 1 byte, up to 12 chars */  \
+    {  \
         ._emb_string_type_id = PwTypeId_String,  \
-        .str_embedded = 1  \
+        .str_embedded = 1,  \
+        .str_char_size = 0,  \
+        .str_embedded_length = (len),  \
+        .str_1 = initializer  \
     }
 
-#define PWDECL_String(name)  _PW_VALUE_CLEANUP __PWDECL_String(name)
-
-#define PwString()  \
-    /* make empty String rvalue */  \
+#define PwString(len, initializer)  \
+    /* make String rvalue, character size 1 byte, up to 12 chars */  \
     ({  \
-        __PWDECL_String(v);  \
-        v;  \
+        _PwValue s = PW_STRING((len), initializer);  \
+        s;  \
     })
 
-#define __PWDECL_DateTime(name)  \
-    /* declare DateTime variable */  \
-    _PwValue name = {  \
+#define PW_STRING2(len, initializer)  \
+    /* declare String variable, character size 2 bytes, up to 6 chars */  \
+    {  \
+        ._emb_string_type_id = PwTypeId_String,  \
+        .str_embedded = 1,  \
+        .str_char_size = 1,  \
+        .str_embedded_length = (len),  \
+        .str_2 = initializer  \
+    }
+
+#define PW_DATETIME  \
+    {  \
         ._datetime_type_id = PwTypeId_DateTime  \
     }
-
-#define PWDECL_DateTime(name)  _PW_VALUE_CLEANUP __PWDECL_DateTime((name))
 
 #define PwDateTime()  \
     /* make DateTime rvalue */  \
     ({  \
-        __PWDECL_DateTime(v);  \
+        _PwValue v = PW_DATETIME;  \
         v;  \
     })
 
-#define __PWDECL_Timestamp(name)  \
-    /* declare Timestamp variable */  \
-    _PwValue name = {  \
+#define PW_TIMESTAMP  \
+    {  \
         ._timestamp_type_id = PwTypeId_Timestamp  \
     }
-
-#define PWDECL_Timestamp(name)  _PW_VALUE_CLEANUP __PWDECL_Timestamp((name))
 
 #define PwTimestamp()  \
     /* make Timestamp rvalue */  \
     ({  \
-        __PWDECL_Timestamp(v);  \
+        _PwValue v = PW_TIMESTAMP;  \
         v;  \
     })
 
-#define __PWDECL_CharPtr(name, initializer)  \
-    /* declare CharPtr variable */  \
-    _PwValue name = {  \
+#define PW_CHARPTR(initializer)  \
+    {  \
         ._charptr_type_id = PwTypeId_CharPtr,  \
-        .charptr_subtype = PW_CHARPTR,  \
+        .charptr_subtype = PwSubType_CharPtr,  \
         .charptr = (char8_t*) (initializer)  \
     }
-
-#define PWDECL_CharPtr(name, initializer)  _PW_VALUE_CLEANUP __PWDECL_CharPtr((name), (initializer))
 
 #define PwCharPtr(initializer)  \
     /* make CharPtr rvalue */  \
     ({  \
-        __PWDECL_CharPtr(v, (initializer));  \
+        _PwValue v = PW_CHARPTR(initializer);  \
         v;  \
     })
 
-#define __PWDECL_Char32Ptr(name, initializer)  \
-    /* declare Char32Ptr variable */  \
-    _PwValue name = {  \
+#define PW_CHAR32PTR(initializer)  \
+    {  \
         ._charptr_type_id = PwTypeId_CharPtr,  \
-        .charptr_subtype = PW_CHAR32PTR,  \
+        .charptr_subtype = PwSubType_Char32Ptr,  \
         .char32ptr = (initializer)  \
     }
-
-#define PWDECL_Char32Ptr(name, initializer)  _PW_VALUE_CLEANUP __PWDECL_Char32Ptr((name), (initializer))
 
 #define PwChar32Ptr(initializer)  \
     /* make Char32Ptr rvalue */  \
     ({  \
-        __PWDECL_Char32Ptr(v, (initializer));  \
+        _PwValue v = PW_CHAR32PTR(initializer);  \
         v;  \
     })
 
-#define __PWDECL_Ptr(name, initializer)  \
-    /* declare Ptr variable */  \
-    _PwValue name = {  \
+#define PW_PTR(initializer)  \
+    {  \
         ._charptr_type_id = PwTypeId_Ptr,  \
         .ptr = (initializer)  \
     }
 
-#define PWDECL_Ptr(name, initializer)  _PW_VALUE_CLEANUP __PWDECL_Ptr((name), (initializer))
-
 #define PwPtr(initializer)  \
     /* make Ptr rvalue */  \
     ({  \
-        __PWDECL_Ptr(v, (initializer));  \
+        _PwValue v = PW_PTR(initializer);  \
         v;  \
-    })
-
-
-// Status declarations and rvalues
-
-#define __PWDECL_Status(name, _status_code)  \
-    /* declare Status variable */  \
-    _PwValue name = {  \
-        ._status_type_id = PwTypeId_Status,  \
-        .status_code = _status_code,  \
-        .line_number = __LINE__, \
-        .file_name = __FILE__ \
-    }
-
-#define PWDECL_Status(name, _status_code)  \
-    _PW_VALUE_CLEANUP __PWDECL_Status((name), (_status_code))
-
-#define PwStatus(_status_code)  \
-    /* make Status rvalue */  \
-    ({  \
-        __PWDECL_Status(status, (_status_code));  \
-        status;  \
-    })
-
-#define PwOK()  \
-    /* make success rvalue */  \
-    ({  \
-        _PwValue status = {  \
-            ._status_type_id = PwTypeId_Status,  \
-            .is_error = 0  \
-        };  \
-        status;  \
-    })
-
-#define PwError(code)  \
-    /* make Status rvalue */  \
-    ({  \
-        __PWDECL_Status(status, (code));  \
-        status;  \
-    })
-
-#define PwOOM()  \
-    /* make PW_ERROR_OOM rvalue */  \
-    ({  \
-        __PWDECL_Status(status, PW_ERROR_OOM);  \
-        status;  \
     })
 
 #define PwVaEnd()  \
@@ -712,22 +631,26 @@ void pw_dump_types(FILE* fp);
         status;  \
     })
 
-#define __PWDECL_Errno(name, _errno)  \
-    /* declare errno Status variable */  \
-    _PwValue name = {  \
+#define PW_STATUS(_status_code)  \
+    {  \
         ._status_type_id = PwTypeId_Status,  \
-        .status_code = PW_ERROR_ERRNO,  \
-        .pw_errno = _errno,  \
-        .line_number = __LINE__, \
-        .file_name = __FILE__ \
+        .status_code = _status_code,  \
+        .line_number = __LINE__,  \
+        .file_name = __FILE__  \
     }
 
-#define PWDECL_Errno(name, _errno)  _PW_VALUE_CLEANUP __PWDECL_Errno((name), (_errno))
+#define PwStatus(_status_code)  \
+    /* make Status rvalue */  \
+    ({  \
+        _PwValue status = PW_STATUS(_status_code);  \
+        status;  \
+    })
 
 #define PwErrno(_errno)  \
     /* make errno Status rvalue */  \
     ({  \
-        __PWDECL_Errno(status, _errno);  \
+        _PwValue status = PW_STATUS(PW_ERROR_ERRNO);  \
+        status.pw_errno = _errno;  \
         status;  \
     })
 
@@ -755,37 +678,61 @@ static inline void pw_destroy(PwValuePtr value)
     }
 }
 
-static inline PwResult pw_clone(PwValuePtr value)
+static inline void __pw_clone(PwValuePtr value, PwValuePtr result)
 /*
- * Clone value.
+ * Helper function for pw_clone and pw_clone2.
  */
 {
+    *result = *value;
     PwMethodClone fn = pw_typeof(value)->clone;
     if (fn) {
-        return fn(value);
-    } else {
-        return *value;
+        fn(result);
     }
 }
 
-static inline PwResult pw_move(PwValuePtr v)
+[[nodiscard]] static inline _PwValue pw_clone(PwValuePtr value)
+/*
+ * Single argument version, return PwValue.
+ * Useful for use as initializer of as an argument for variadic functions
+ * that accept PwValues (i.e. not PwValuePtr)
+ * such as pw_array, pw_array_append, pw_map, pw_map_update.
+ */
+{
+    _PwValue result = PW_NULL;
+    __pw_clone(value, &result);
+    return result;
+}
+
+static inline void pw_clone2(PwValuePtr value, PwValuePtr result)
+/*
+ * Two arguments version.
+ * `result` is destroyed before cloning.
+ */
+{
+    pw_destroy(result);
+    __pw_clone(value, result);
+}
+
+static inline void pw_move(PwValuePtr v, PwValuePtr result)
 /*
  * "Move" value to another variable or out of the function
  * (i.e. return a value and reset autocleaned variable)
+ * `result` is destroyed before moving.
  */
 {
-    _PwValue tmp = *v;
+    pw_destroy(result);
+    *result = *v;
     v->type_id = PwTypeId_Null;
-    return tmp;
 }
 
-static inline PwResult pw_deepcopy(PwValuePtr value)
+[[nodiscard]] static inline bool pw_deepcopy(PwValuePtr value, PwValuePtr result)
 {
     PwMethodDeepCopy fn = pw_typeof(value)->deepcopy;
     if (fn) {
-        return fn(value);
+        return fn(value, result);
     } else {
-        return *value;
+        *result = *value;
+        return true;
     }
 }
 
@@ -794,16 +741,16 @@ static inline bool pw_is_true(PwValuePtr value)
     return pw_typeof(value)->is_true(value);
 }
 
-static inline PwResult pw_to_string(PwValuePtr value)
+[[nodiscard]] static inline bool pw_to_string(PwValuePtr value, PwValuePtr result)
 {
-    return pw_typeof(value)->to_string(value);
+    return pw_typeof(value)->to_string(value, result);
 }
 
 /****************************************************************
  * API for struct types
  */
 
-static inline void* _pw_get_data_ptr(PwValuePtr v, PwTypeId type_id)
+[[nodiscard]] static inline void* _pw_get_data_ptr(PwValuePtr v, PwTypeId type_id)
 /*
  * Helper function to get pointer to struct data.
  * Typically used in macros like this:
@@ -825,7 +772,7 @@ static inline void* _pw_get_data_ptr(PwValuePtr v, PwTypeId type_id)
  * API for compound types
  */
 
-bool _pw_adopt(PwValuePtr parent, PwValuePtr child);
+[[nodiscard]] bool _pw_adopt(PwValuePtr parent, PwValuePtr child);
 /*
  * Add parent to child's parents or increment
  * parents_refcount if added already.
@@ -841,19 +788,21 @@ bool _pw_abandon(PwValuePtr parent, PwValuePtr child);
  * remove parent from child's parents and return true.
  *
  * If child still refers to parent, return false.
+ *
+ * XXX return value is not used.
  */
 
-bool _pw_is_embraced(PwValuePtr value);
+[[nodiscard]] bool _pw_is_embraced(PwValuePtr value);
 /*
  * Return true if value is embraced by some parent.
  */
 
-bool _pw_need_break_cyclic_refs(PwValuePtr value);
+[[nodiscard]] bool _pw_need_break_cyclic_refs(PwValuePtr value);
 /*
  * Check if all parents have zero refcount and there are cyclic references.
  */
 
-static inline bool _pw_embrace(PwValuePtr parent, PwValuePtr child)
+[[nodiscard]] static inline bool _pw_embrace(PwValuePtr parent, PwValuePtr child)
 {
     if (pw_is_compound(child)) {
         return _pw_adopt(parent, child);
@@ -862,7 +811,7 @@ static inline bool _pw_embrace(PwValuePtr parent, PwValuePtr child)
     }
 }
 
-PwValuePtr _pw_on_chain(PwValuePtr value, _PwCompoundChain* tail);
+[[nodiscard]] PwValuePtr _pw_on_chain(PwValuePtr value, _PwCompoundChain* tail);
 /*
  * Check if value struct_data is on chain.
  */
@@ -871,7 +820,7 @@ PwValuePtr _pw_on_chain(PwValuePtr value, _PwCompoundChain* tail);
  * Compare for equality.
  */
 
-static inline bool _pw_equal(PwValuePtr a, PwValuePtr b)
+[[nodiscard]] static inline bool _pw_equal(PwValuePtr a, PwValuePtr b)
 {
     if (a == b) {
         // compare with self
@@ -906,7 +855,7 @@ static inline bool _pw_equal(PwValuePtr a, PwValuePtr b)
     unsigned long long: _pwc_equal_ulonglong,  \
                  float: _pwc_equal_float,      \
                 double: _pwc_equal_double,     \
-                 char*: _pwc_equal_u8_wrapper, \
+                 char*: _pwc_equal_ascii,      \
               char8_t*: _pwc_equal_u8,         \
              char32_t*: _pwc_equal_u32,        \
             PwValuePtr: _pw_equal              \
@@ -915,23 +864,23 @@ static inline bool _pw_equal(PwValuePtr a, PwValuePtr b)
  * Type-generic compare for equality.
  */
 
-static inline bool _pwc_equal_null      (PwValuePtr a, nullptr_t          b) { return pw_is_null(a); }
-static inline bool _pwc_equal_bool      (PwValuePtr a, bool               b) { __PWDECL_Bool     (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_char      (PwValuePtr a, char               b) { __PWDECL_Signed   (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_uchar     (PwValuePtr a, unsigned char      b) { __PWDECL_Unsigned (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_short     (PwValuePtr a, short              b) { __PWDECL_Signed   (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_ushort    (PwValuePtr a, unsigned short     b) { __PWDECL_Unsigned (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_int       (PwValuePtr a, int                b) { __PWDECL_Signed   (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_uint      (PwValuePtr a, unsigned int       b) { __PWDECL_Unsigned (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_long      (PwValuePtr a, long               b) { __PWDECL_Signed   (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_ulong     (PwValuePtr a, unsigned long      b) { __PWDECL_Unsigned (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_longlong  (PwValuePtr a, long long          b) { __PWDECL_Signed   (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_ulonglong (PwValuePtr a, unsigned long long b) { __PWDECL_Unsigned (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_float     (PwValuePtr a, float              b) { __PWDECL_Float    (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_double    (PwValuePtr a, double             b) { __PWDECL_Float    (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_u8        (PwValuePtr a, char8_t*           b) { __PWDECL_CharPtr  (v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_u32       (PwValuePtr a, char32_t*          b) { __PWDECL_Char32Ptr(v, b); return _pw_equal(a, &v); }
-static inline bool _pwc_equal_u8_wrapper(PwValuePtr a, char*              b) { return _pwc_equal_u8(a, (char8_t*) b); }
+[[nodiscard]] static inline bool _pwc_equal_null     (PwValuePtr a, nullptr_t          b) { return pw_is_null(a); }
+[[nodiscard]] static inline bool _pwc_equal_bool     (PwValuePtr a, bool               b) { _PwValue v = PW_BOOL(b);      return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_char     (PwValuePtr a, char               b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_uchar    (PwValuePtr a, unsigned char      b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_short    (PwValuePtr a, short              b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_ushort   (PwValuePtr a, unsigned short     b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_int      (PwValuePtr a, int                b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_uint     (PwValuePtr a, unsigned int       b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_long     (PwValuePtr a, long               b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_ulong    (PwValuePtr a, unsigned long      b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_longlong (PwValuePtr a, long long          b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_ulonglong(PwValuePtr a, unsigned long long b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_float    (PwValuePtr a, float              b) { _PwValue v = PW_FLOAT(b);     return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_double   (PwValuePtr a, double             b) { _PwValue v = PW_FLOAT(b);     return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_u8       (PwValuePtr a, char8_t*           b) { _PwValue v = PW_CHARPTR(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_u32      (PwValuePtr a, char32_t*          b) { _PwValue v = PW_CHAR32PTR(b); return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_ascii    (PwValuePtr a, char*              b) { return _pwc_equal_u8(a, (char8_t*) b); }
 
 #ifdef __cplusplus
 }

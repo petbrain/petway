@@ -17,7 +17,7 @@ static InterfaceInfo* registered_interfaces = nullptr;  // array for interfaces
 static Arena* arena = nullptr;  // arena for interface methods, per data type
 
 
-[[ noreturn ]]
+[[noreturn]]
 void _pw_panic_no_interface(PwTypeId type_id, unsigned interface_id)
 {
     char* iname;
@@ -240,13 +240,15 @@ void _pw_update_interfaces(PwType* type, PwType* ancestor, va_list ap)
  * Miscellaneous functions
  */
 
-PwResult pw_write_exact(PwValuePtr writeable, void* data, unsigned size)
+[[nodiscard]] bool pw_write_exact(PwValuePtr writeable, void* data, unsigned size)
 {
     unsigned bytes_written;
-    PwValue status = pw_write(writeable, data, size, &bytes_written);
-    pw_return_if_error(&status);
-    if (bytes_written != size) {
-        return PwError(PW_ERROR_WRITE);
+    if (!pw_write(writeable, data, size, &bytes_written)) {
+        return false;
     }
-    return PwOK();
+    if (bytes_written != size) {
+        pw_set_status(PwStatus(PW_ERROR_WRITE));
+        return false;
+    }
+    return true;
 }

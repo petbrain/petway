@@ -12,18 +12,14 @@ void _pw_panic_bad_charptr_subtype(PwValuePtr v)
     pw_panic("Bad charptr subtype %u\n", v->charptr_subtype);
 }
 
-static PwResult charptr_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool charptr_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
 
     static char8_t emptystr[1] = {0};
 
-    _PwValue result = {
-        ._charptr_type_id = PwTypeId_CharPtr,
-        .charptr_subtype = PW_CHARPTR,
-        .charptr = emptystr
-    };
-    return result;
+    *result = PwCharPtr(emptystr);
+    return true;
 }
 
 static void charptr_hash(PwValuePtr self, PwHashContext* ctx)
@@ -35,7 +31,7 @@ static void charptr_hash(PwValuePtr self, PwHashContext* ctx)
     _pw_hash_uint64(ctx, PwTypeId_String);
 
     switch (self->charptr_subtype) {
-        case PW_CHARPTR:
+        case PwSubType_CharPtr:
             if (self->charptr) {
                 char8_t* ptr = self->charptr;
                 for (;;) {
@@ -59,7 +55,7 @@ static void charptr_hash(PwValuePtr self, PwHashContext* ctx)
             }
             break;
 
-        case PW_CHAR32PTR:
+        case PwSubType_Char32Ptr:
             if (self->char32ptr) {
                 char32_t* ptr = self->char32ptr;
                 for (;;) {
@@ -95,7 +91,7 @@ static void charptr_dump(PwValuePtr self, FILE* fp, int first_indent, int next_i
     _pw_print_indent(fp, next_indent);
 
     switch (self->charptr_subtype) {
-        case PW_CHARPTR: {
+        case PwSubType_CharPtr: {
             fputs("char8_t*: ", fp);
             char8_t* ptr = self->charptr;
             for (unsigned i = 0;; i++) {
@@ -111,7 +107,7 @@ static void charptr_dump(PwValuePtr self, FILE* fp, int first_indent, int next_i
             }
             break;
         }
-        case PW_CHAR32PTR: {
+        case PwSubType_Char32Ptr: {
             fputs("char32_t*: ", fp);
             char32_t* ptr = self->char32ptr;
             for (unsigned i = 0;; i++) {
@@ -133,38 +129,38 @@ static void charptr_dump(PwValuePtr self, FILE* fp, int first_indent, int next_i
     fputc('\n', fp);
 }
 
-PwResult pw_charptr_to_string(PwValuePtr self)
+[[nodiscard]] bool pw_charptr_to_string(PwValuePtr self, PwValuePtr result)
 {
     switch (self->charptr_subtype) {
-        case PW_CHARPTR:   return _pw_create_string_u8  (self->charptr);
-        case PW_CHAR32PTR: return _pw_create_string_u32 (self->char32ptr);
+        case PwSubType_CharPtr:   return _pw_create_string_u8  (self->charptr, result);
+        case PwSubType_Char32Ptr: return _pw_create_string_u32 (self->char32ptr, result);
         default:
             _pw_panic_bad_charptr_subtype(self);
     }
 }
 
-static bool charptr_is_true(PwValuePtr self)
+[[nodiscard]] static bool charptr_is_true(PwValuePtr self)
 {
     switch (self->charptr_subtype) {
-        case PW_CHARPTR:   return self->charptr != nullptr && *self->charptr;
-        case PW_CHAR32PTR: return self->char32ptr != nullptr && *self->char32ptr;
+        case PwSubType_CharPtr:   return self->charptr != nullptr && *self->charptr;
+        case PwSubType_Char32Ptr: return self->char32ptr != nullptr && *self->char32ptr;
         default:
             _pw_panic_bad_charptr_subtype(self);
     }
 }
 
-static bool charptr_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool charptr_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     switch (self->charptr_subtype) {
-        case PW_CHARPTR:
+        case PwSubType_CharPtr:
             switch (other->charptr_subtype) {
-                case PW_CHARPTR:
+                case PwSubType_CharPtr:
                     if (self->charptr == nullptr) {
                         return other->charptr == nullptr;
                     } else {
                         return strcmp((char*) self->charptr, (char*) other->charptr) == 0;
                     }
-                case PW_CHAR32PTR:
+                case PwSubType_Char32Ptr:
                     if (self->char32ptr == nullptr) {
                         return other->char32ptr == nullptr;
                     } else {
@@ -174,15 +170,15 @@ static bool charptr_equal_sametype(PwValuePtr self, PwValuePtr other)
                     _pw_panic_bad_charptr_subtype(other);
             }
 
-        case PW_CHAR32PTR:
+        case PwSubType_Char32Ptr:
             switch (other->charptr_subtype) {
-                case PW_CHARPTR:
+                case PwSubType_CharPtr:
                     if (self->char32ptr == nullptr) {
                         return other->charptr == nullptr;
                     } else {
                         return u32_strcmp_u8(self->char32ptr, other->charptr) == 0;
                     }
-                case PW_CHAR32PTR:
+                case PwSubType_Char32Ptr:
                     if (self->char32ptr == nullptr) {
                         return other->char32ptr == nullptr;
                     } else {
@@ -197,7 +193,7 @@ static bool charptr_equal_sametype(PwValuePtr self, PwValuePtr other)
     }
 }
 
-static bool charptr_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool charptr_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -229,7 +225,7 @@ PwType _pw_charptr_type = {
     .allocator      = nullptr,
     .create         = charptr_create,
     .destroy        = nullptr,
-    .clone          = pw_charptr_to_string,
+    .clone          = nullptr,
     .hash           = charptr_hash,
     .deepcopy       = pw_charptr_to_string,
     .dump           = charptr_dump,
@@ -239,30 +235,29 @@ PwType _pw_charptr_type = {
     .equal          = charptr_equal,
 };
 
-bool pw_charptr_to_string_inplace(PwValuePtr v)
+[[nodiscard]] bool pw_charptr_to_string_inplace(PwValuePtr v)
 {
     if (!pw_is_charptr(v)) {
         return true;
     }
-    PwValue result = pw_charptr_to_string(v);
-    if (pw_ok(&result)) {
-        *v = pw_move(&result);
-        return true;
-    } else {
+    PwValue result = PW_NULL;
+    if (!pw_charptr_to_string(v, &result)) {
         return false;
     }
+    pw_move(&result, v);
+    return true;
 }
 
-bool _pw_charptr_equal_string(PwValuePtr charptr, PwValuePtr str)
+[[nodiscard]] bool _pw_charptr_equal_string(PwValuePtr charptr, PwValuePtr str)
 {
     switch (charptr->charptr_subtype) {
-        case PW_CHARPTR:
+        case PwSubType_CharPtr:
             if (charptr->charptr == nullptr) {
                 return false;
             } else {
                 return _pw_equal_u8(str, charptr->charptr);
             }
-        case PW_CHAR32PTR:
+        case PwSubType_Char32Ptr:
             if (charptr->char32ptr == nullptr) {
                 return false;
             } else {
@@ -273,11 +268,11 @@ bool _pw_charptr_equal_string(PwValuePtr charptr, PwValuePtr str)
     }
 }
 
-unsigned _pw_charptr_strlen2(PwValuePtr charptr, uint8_t* char_size)
+[[nodiscard]] unsigned _pw_charptr_strlen2(PwValuePtr charptr, uint8_t* char_size)
 {
     switch (charptr->charptr_subtype) {
-        case PW_CHARPTR:   return utf8_strlen2(charptr->charptr, char_size);
-        case PW_CHAR32PTR: return u32_strlen2(charptr->char32ptr, char_size);
+        case PwSubType_CharPtr:   return utf8_strlen2(charptr->charptr, char_size);
+        case PwSubType_Char32Ptr: return u32_strlen2(charptr->char32ptr, char_size);
         default:
             _pw_panic_bad_charptr_subtype(charptr);
     }

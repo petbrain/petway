@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include <pw_types.h>
+#include <pw_task.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,6 +45,7 @@ extern "C" {
 // StringIO errors
 #define PW_ERROR_UNREAD_FAILED        26
 
+
 uint16_t pw_define_status(char* status);
 /*
  * Define status in the global table.
@@ -58,91 +60,57 @@ char* pw_status_str(uint16_t status_code);
  * Get status string by status code.
  */
 
-#define pw_status(status_code, ...)  \
-    /* make status with optional description */ \
-    ({  \
-        __PWDECL_Status(status, (status_code));  \
-        __VA_OPT__( _pw_set_status_desc(&status, __VA_ARGS__); )  \
-        status;  \
-    })
 
-static inline bool pw_ok(PwValuePtr status)
+static inline bool pw_is_error(PwValuePtr value)
 {
-    if (!pw_is_status(status)) {
-        // any other type means okay
-        return true;
-    }
-    return !status->is_error;
-}
-
-static inline bool pw_error(PwValuePtr status)
-{
-    return !pw_ok(status);
-}
-
-#define pw_return_if_error(value_ptr, ...)  \
-    /* emit return statement if value is an error; set description, if provided by variadic arguments */ \
-    do {  \
-        if (pw_error(value_ptr)) {  \
-            __VA_OPT__( _pw_set_status_desc(value_ptr, __VA_ARGS__); )  \
-            return pw_move(value_ptr);  \
-        }  \
-    } while (false)
-
-#define pw_return_ok_or_oom( function_call )  \
-    do {  \
-        if (function_call) {  \
-            return PwOK();  \
-        } else {  \
-            return PwOOM();  \
-        }  \
-    } while (false)
-
-#define pw_expect_ok( function_call )  \
-    do {  \
-        PwValue __status = function_call;  \
-        pw_return_if_error(&__status);  \
-    } while (false)
-
-#define pw_expect_true( function_call )  \
-    do {  \
-        if (!(function_call)) {  \
-            return PwOOM();  \
-        }  \
-    } while (false)
-
-
-static inline bool pw_eof(PwValuePtr status)
-{
-    if (!pw_is_status(status)) {
+    if (pw_is_status(value)) {
+        return value->is_error;
+    } else {
         return false;
     }
-    return status->status_code == PW_ERROR_EOF;
 }
 
-static inline bool pw_errno(PwValuePtr status, int _errno)
+static inline bool pw_is_eof()
 {
-    if (!pw_is_status(status)) {
+    if (!pw_is_status(&current_task->status)) {
         return false;
     }
-    return status->status_code == PW_ERROR_ERRNO && status->pw_errno == _errno;
+    return current_task->status.status_code == PW_ERROR_EOF;
 }
 
-static inline bool pw_timeout(PwValuePtr status)
+static inline bool pw_is_errno(int _errno)
 {
-    if (!pw_is_status(status)) {
+    if (!pw_is_status(&current_task->status)) {
         return false;
     }
-    return status->status_code == PW_ERROR_TIMEOUT;
+    return current_task->status.status_code == PW_ERROR_ERRNO
+        && current_task->status.pw_errno == _errno;
 }
 
-static inline bool pw_va_end(PwValuePtr status)
+static inline bool pw_is_timeout()
+{
+    if (!pw_is_status(&current_task->status)) {
+        return false;
+    }
+    return current_task->status.status_code == PW_ERROR_TIMEOUT;
+}
+
+static inline bool pw_is_va_end(PwValuePtr status)
 {
     if (!pw_is_status(status)) {
         return false;
     }
     return status->status_code == PW_STATUS_VA_END;
 }
+
+
+#define pw_set_status(_status, ...)  \
+    do {  \
+        pw_destroy(&current_task->status);  \
+        current_task->status = _status;  \
+        __VA_OPT__( _pw_set_status_desc(&current_task->status, __VA_ARGS__); )  \
+    } while (false)
+
 
 void _pw_set_status_location(PwValuePtr status, char* file_name, unsigned line_number);
 void _pw_set_status_desc(PwValuePtr status, char* fmt, ...);

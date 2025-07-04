@@ -108,7 +108,7 @@ void _pw_set_status_desc(PwValuePtr status, char* fmt, ...)
 void _pw_set_status_desc_ap(PwValuePtr status, char* fmt, va_list ap)
 {
     pw_assert_status(status);
-    if (pw_ok(status)) {
+    if (!status->is_error) {
         // do not set description for PW_SUCCESS
         // such status must not have any allocated data because it is allowed
         // to be overwritten without calling pw_destroy on it, similar to null value
@@ -119,8 +119,7 @@ void _pw_set_status_desc_ap(PwValuePtr status, char* fmt, va_list ap)
         pw_destroy(&status->status_data->description);
     } else {
         char* file_name = status->file_name;  // file_name will be overwritten with status_data, save it
-        PwValue err = _pw_struct_alloc(status, nullptr);
-        if (pw_error(&err)) {
+        if (!_pw_struct_alloc(status, nullptr)) {
             return;
         }
         status->has_status_data = 1;
@@ -131,9 +130,9 @@ void _pw_set_status_desc_ap(PwValuePtr status, char* fmt, va_list ap)
     if (vasprintf(&desc, fmt, ap) == -1) {
         return;
     }
-    PwValue s = pw_create_string(desc);
-    if (pw_ok(&s)) {
-        status->status_data->description = pw_move(&s);
+    PwValue s = PW_NULL;
+    if (pw_create_string(desc, &s)) {
+        pw_move(&s, &status->status_data->description);
     }
     free(desc);
 }
@@ -142,8 +141,8 @@ void pw_print_status(FILE* fp, PwValuePtr status)
 {
     // XXX rewrite in error-free way
 
-    PwValue desc = pw_typeof(status)->to_string(status);
-    if (!pw_is_string(&desc)) {
+    PwValue desc = PW_NULL;
+    if (!pw_typeof(status)->to_string(status, &desc)) {
         // XXX
         pw_dump(fp, &desc);
     } else {
@@ -157,13 +156,14 @@ void pw_print_status(FILE* fp, PwValuePtr status)
  * Basic interface methods
  */
 
-static PwResult status_create(PwTypeId type_id, void* ctor_args)
+[[nodiscard]] static bool status_create(PwTypeId type_id, void* ctor_args, PwValuePtr result)
 {
     // XXX use ctor_args for initializer?
 
-    PwValue result = PwOK();
-    result.type_id = type_id;
-    return pw_move(&result);
+    pw_destroy(result);
+    *result = PwStatus(PW_SUCCESS);
+    result->type_id = type_id;
+    return true;
 }
 
 static void status_destroy(PwValuePtr self)
@@ -175,13 +175,11 @@ static void status_destroy(PwValuePtr self)
     }
 }
 
-static PwResult status_clone(PwValuePtr self)
+static void status_clone(PwValuePtr self)
 {
     if (self->has_status_data) {
-        // call super method
-        return _pw_types[PwTypeId_Struct]->clone(self);
-    } else {
-        return *self;
+        // call super method to increment refcount
+        _pw_types[PwTypeId_Struct]->clone(self);
     }
 }
 
@@ -195,32 +193,40 @@ static void status_hash(PwValuePtr self, PwHashContext* ctx)
     // XXX do not hash description?
 }
 
-static PwResult status_deepcopy(PwValuePtr self)
+[[nodiscard]] static bool status_deepcopy(PwValuePtr self, PwValuePtr result)
 {
-    PwValue result = *self;
     if (!self->has_status_data) {
-        return pw_move(&result);
+        pw_move(self, result);
+        return true;
     }
-    result.status_data = nullptr;
+    pw_destroy(result);
+    result->type_id = PW_SUCCESS;
+    result->status_data = nullptr;
 
-    pw_expect_ok( _pw_struct_alloc(&result, nullptr) );
-
-    result.status_data->file_name = self->status_data->file_name;
-    result.status_data->line_number = self->status_data->line_number;
-    result.status_data->description = pw_deepcopy(&self->status_data->description);
-    return pw_move(&result);
+    if (!_pw_struct_alloc(result, nullptr)) {
+        return false;
+    }
+    result->status_data->file_name = self->status_data->file_name;
+    result->status_data->line_number = self->status_data->line_number;
+    return pw_deepcopy(&self->status_data->description, &result->status_data->description);
 }
 
-static PwResult status_to_string(PwValuePtr status)
+[[nodiscard]] static bool status_to_string(PwValuePtr status, PwValuePtr result)
 {
     if (!status) {
-        return PwString_1_12(6, '(', 'n', 'u', 'l', 'l', ')', 0, 0, 0, 0, 0, 0);
+        pw_destroy(result);
+        *result = PwString(6, "(null)");
+        return false;
     }
     if (!pw_is_status(status)) {
-        return PwString_1_12(12, '(', 'n', 'o', 't', ' ', 's', 't', 'a', 't', 'u', 's', ')');
+        pw_destroy(result);
+        *result = PwString(12, "(not status)");
+        return false;
     }
     if (!status->is_error) {
-        return PwString_1_12(2, 'O', 'K', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        pw_destroy(result);
+        *result = PwString(7, "Success");
+        return false;
     }
     char* status_str = pw_status_str(status->status_code);
     char* file_name;
@@ -258,19 +264,26 @@ static PwResult status_to_string(PwValuePtr status)
     char desc[sizeof(fmt) + 16 + strlen(status_str) + strlen(file_name) + errno_length];
     unsigned length = snprintf(desc, sizeof(desc), fmt, status_str, file_name, line_number, errno_desc);
 
-    PwValue result = pw_create_empty_string(length + description_length + 2, char_size);
-    if (pw_error(&result)) {
+    if (!pw_create_empty_string(length + description_length + 2, char_size, result)) {
         goto error;
     }
-    pw_string_append(&result, desc);
-    if (description_length) {
-        pw_string_append(&result, "; ");
-        pw_string_append(&result, &status->status_data->description);
+    if (!pw_string_append(result, desc)) {
+        goto error;
     }
-    return pw_move(&result);
+    if (description_length) {
+        if (!pw_string_append(result, "; ")) {
+            goto error;
+        }
+        if (!pw_string_append(result, &status->status_data->description)) {
+            goto error;
+        }
+    }
+    return true;
 
 error:
-    return PwString_1_12(7, '(', 'e', 'r', 'r', 'o', 'r', ')', 0, 0, 0, 0, 0);
+    pw_destroy(result);
+    *result = PwString(7, "(error)");
+    return false;
 }
 
 static void status_dump(PwValuePtr self, FILE* fp, int first_indent, int next_indent, _PwCompoundChain* tail)
@@ -280,7 +293,10 @@ static void status_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
     if (self->has_status_data) {
         _pw_dump_struct_data(fp, self);
     }
-    PwValue desc = status_to_string(self);
+    PwValue desc = PW_NULL;
+    if (!status_to_string(self, &desc)) {
+        return;
+    }
     PW_CSTRING_LOCAL(cdesc, &desc);
     fputc(' ', fp);
     fputs(cdesc, fp);

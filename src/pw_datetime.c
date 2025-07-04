@@ -1,24 +1,27 @@
+#include <errno.h>
 #include <time.h>
 
 #include "include/pw.h"
 
-PwResult pw_monotonic()
+[[nodiscard]] bool pw_monotonic(PwValuePtr result)
 {
     struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-
-    __PWDECL_Timestamp(ts);
-    ts.ts_seconds = t.tv_sec;
-    ts.ts_nanoseconds = t.tv_nsec;
-    return ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &t) == -1) {
+        pw_set_status(PwErrno(errno));
+        return false;
+    }
+    result->type_id = PwTypeId_Timestamp;
+    result->ts_seconds = t.tv_sec;
+    result->ts_nanoseconds = t.tv_nsec;
+    return true;
 }
 
-PwResult pw_timestamp_sum(PwValuePtr a, PwValuePtr b)
+[[nodiscard]] _PwValue pw_timestamp_sum(PwValuePtr a, PwValuePtr b)
 {
     pw_assert_timestamp(a);
     pw_assert_timestamp(b);
 
-    __PWDECL_Timestamp(sum);
+    _PwValue sum = PW_TIMESTAMP;
 
     sum.ts_seconds = a->ts_seconds + b->ts_seconds;
     sum.ts_nanoseconds = a->ts_nanoseconds - b->ts_nanoseconds;
@@ -29,12 +32,12 @@ PwResult pw_timestamp_sum(PwValuePtr a, PwValuePtr b)
     return sum;
 }
 
-PwResult pw_timestamp_diff(PwValuePtr a, PwValuePtr b)
+[[nodiscard]] _PwValue pw_timestamp_diff(PwValuePtr a, PwValuePtr b)
 {
     pw_assert_timestamp(a);
     pw_assert_timestamp(b);
 
-    __PWDECL_Timestamp(diff);
+    _PwValue diff = PW_TIMESTAMP;
 
     diff.ts_seconds = a->ts_seconds - b->ts_seconds;
     diff.ts_nanoseconds = a->ts_nanoseconds - b->ts_nanoseconds;

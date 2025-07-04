@@ -35,9 +35,9 @@ typedef struct __PwInterface _PwInterface;
 
 typedef struct {
     unsigned (*length)(PwValuePtr self);
-    PwResult (*get_item)(PwValuePtr self, PwValuePtr key);
-    PwResult (*set_item)(PwValuePtr self, PwValuePtr key, PwValuePtr value);
-    PwResult (*delete_item)(PwValuePtr self, PwValuePtr key);
+    [[nodiscard]] bool (*get_item)(PwValuePtr self, PwValuePtr key, PwValuePtr result);
+    [[nodiscard]] bool (*set_item)(PwValuePtr self, PwValuePtr key, PwValuePtr value);
+    [[nodiscard]] bool (*delete_item)(PwValuePtr self, PwValuePtr key);
 
 } PwInterface_RandomAccess;
 
@@ -46,11 +46,7 @@ typedef struct {
  */
 
 typedef struct {
-    PwResult (*read)(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read);
-    /*
-     * Return status.
-     */
-
+    [[nodiscard]] bool (*read)(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read);
 } PwInterface_Reader;
 
 
@@ -59,11 +55,7 @@ typedef struct {
  */
 
 typedef struct {
-    PwResult (*write)(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written);
-    /*
-     * Return status.
-     */
-
+    [[nodiscard]] bool (*write)(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written);
 } PwInterface_Writer;
 
 
@@ -74,7 +66,7 @@ typedef struct {
 
 typedef struct {
 
-    PwResult (*start)(PwValuePtr self);
+    [[nodiscard]] bool (*start)(PwValuePtr self);
     /*
      * Prepare to read lines.
      *
@@ -84,29 +76,27 @@ typedef struct {
      * Calling this method again should reset line reader.
      */
 
-    PwResult (*read_line)(PwValuePtr self);
+    [[nodiscard]] bool (*read_line)(PwValuePtr self, PwValuePtr result);
     /*
      * Read next line.
      */
 
-    PwResult (*read_line_inplace)(PwValuePtr self, PwValuePtr line);
+    [[nodiscard]] bool (*read_line_inplace)(PwValuePtr self, PwValuePtr line);
     /*
      * Truncate line and read next line into it.
      * Return true if read some data, false if error or eof.
      *
-     * Rationale: avoid frequent memory allocations that would take place
-     * if we returned line by line.
-     * On the contrary, existing line is a pre-allocated buffer for the next one.
+     * This makes sense for files, but for string list it destroys line and clones nexr one into it.
      */
 
-    bool (*unread_line)(PwValuePtr self, PwValuePtr line);
+    [[nodiscard]] bool (*unread_line)(PwValuePtr self, PwValuePtr line);
     /*
      * Push line back to the reader.
      * Only one pushback is guaranteed.
      * Return false if pushback buffer is full.
      */
 
-    unsigned (*get_line_number)(PwValuePtr self);
+    [[nodiscard]] unsigned (*get_line_number)(PwValuePtr self);
     /*
      * Return current line number, 1-based.
      */
@@ -211,20 +201,20 @@ static inline bool _pw_has_interface(PwTypeId type_id, unsigned interface_id)
  * Shorthand functions
  */
 
-static inline PwResult pw_read(PwValuePtr reader, void* buffer, unsigned buffer_size, unsigned* bytes_read)
+[[nodiscard]] static inline bool pw_read(PwValuePtr reader, void* buffer, unsigned buffer_size, unsigned* bytes_read)
 {
     return pw_interface(reader->type_id, Reader)->read(reader, buffer, buffer_size, bytes_read);
 }
 
-static inline PwResult pw_write(PwValuePtr writer, void* data, unsigned size, unsigned* bytes_written)
+[[nodiscard]] static inline bool pw_write(PwValuePtr writer, void* data, unsigned size, unsigned* bytes_written)
 {
     return pw_interface(writer->type_id, Writer)->write(writer, data, size, bytes_written);
 }
 
-PwResult pw_write_exact(PwValuePtr writeable, void* data, unsigned size);
+[[nodiscard]] bool pw_write_exact(PwValuePtr writeable, void* data, unsigned size);
 /*
  * Write exactly `size` bytes. Return status.
- * XXX blend with bfile_strict_write? What about asyncio?
+ * XXX blend with bfile_strict_write?
  */
 
 #ifdef __cplusplus

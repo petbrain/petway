@@ -6,14 +6,14 @@
 extern "C" {
 #endif
 
-PwResult pw_to_json(PwValuePtr value, unsigned indent);
+[[nodiscard]] bool pw_to_json(PwValuePtr value, unsigned indent, PwValuePtr result);
 /*
  * Convert `value` to JSON string.
  *
  * If `indent` is nonzero, the result is formatted with indentation.
  */
 
-PwResult pw_to_json_file(PwValuePtr value, unsigned indent, PwValuePtr file);
+[[nodiscard]] bool pw_to_json_file(PwValuePtr value, unsigned indent, PwValuePtr file);
 /*
  * Convert `value` to JSON and write to `file` in UTF-8 encoding.
  *

@@ -3,66 +3,72 @@
 
 #include "include/pw.h"
 #include "include/pw_parse.h"
+#include "src/pw_alloc.h"
 #include "src/pw_charptr_internal.h"
 #include "src/pw_array_internal.h"
 #include "src/pw_string_internal.h"
 #include "src/pw_struct_internal.h"
 
-[[noreturn]]
-static void panic_status()
-{
-    pw_panic("Array cannot contain Status values");
-}
-
 static void array_fini(PwValuePtr self)
 {
-    _PwArray* array_data = get_array_data_ptr(self);
-    pw_assert(array_data->itercount == 0);
-    _pw_destroy_array(self->type_id, array_data, self);
+    _PwArray* array = get_array_struct_ptr(self);
+    pw_assert(array->itercount == 0);
+    _pw_destroy_array(self->type_id, array, self);
 }
 
-static PwResult array_init(PwValuePtr self, void* ctor_args)
+[[nodiscard]] static bool array_init(PwValuePtr self, void* ctor_args)
 {
     // XXX not using ctor_args for now
+    // XXX array constructor arg: initial size
 
-    PwValue status = _pw_alloc_array(self->type_id, get_array_data_ptr(self), PWARRAY_INITIAL_CAPACITY);
-    if (pw_error(&status)) {
+    if (_pw_alloc_array(self->type_id, get_array_struct_ptr(self), PWARRAY_INITIAL_CAPACITY)) {
+        return true;
+    } else {
         array_fini(self);
+        return false;
     }
-    return pw_move(&status);
 }
 
 static void array_hash(PwValuePtr self, PwHashContext* ctx)
 {
     _pw_hash_uint64(ctx, self->type_id);
-    _PwArray* array_data = get_array_data_ptr(self);
-    PwValuePtr item_ptr = array_data->items;
-    for (unsigned n = array_data->length; n; n--, item_ptr++) {
+    _PwArray* array = get_array_struct_ptr(self);
+    PwValuePtr item_ptr = array->items;
+    for (unsigned n = array->length; n; n--, item_ptr++) {
         _pw_call_hash(item_ptr, ctx);
     }
 }
 
-static PwResult array_deepcopy(PwValuePtr self)
+[[nodiscard]] static bool array_deepcopy(PwValuePtr self, PwValuePtr result)
 {
-    PwValue dest = pw_create(self->type_id);
-    pw_return_if_error(&dest);
+    if (!pw_create(self->type_id, result)) {
+        return false;
+    }
 
-    _PwArray* src_array = get_array_data_ptr(self);
-    _PwArray* dest_array = get_array_data_ptr(&dest);
+    _PwArray* src_array = get_array_struct_ptr(self);
+    _PwArray* dest_array = get_array_struct_ptr(result);
 
-    pw_expect_ok( _pw_array_resize(dest.type_id, dest_array, src_array->length) );
+    if (!_pw_array_resize(self->type_id, dest_array, src_array->length)) {
+        pw_destroy(result);
+        return false;
+    }
 
     PwValuePtr src_item_ptr = src_array->items;
     PwValuePtr dest_item_ptr = dest_array->items;
     for (unsigned i = 0; i < src_array->length; i++) {
-        *dest_item_ptr = pw_deepcopy(src_item_ptr);
-        pw_return_if_error(dest_item_ptr);
-        _pw_embrace(&dest, dest_item_ptr);
+        if (!pw_deepcopy(src_item_ptr, dest_item_ptr)) {
+            pw_destroy(result);
+            return false;
+        }
+        if (!_pw_embrace(result, dest_item_ptr)) {
+            pw_destroy(result);
+            return false;
+        };
         src_item_ptr++;
         dest_item_ptr++;
         dest_array->length++;
     }
-    return pw_move(&dest);
+    return true;
 }
 
 static void array_dump(PwValuePtr self, FILE* fp, int first_indent, int next_indent, _PwCompoundChain* tail)
@@ -83,37 +89,38 @@ static void array_dump(PwValuePtr self, FILE* fp, int first_indent, int next_ind
         .value = self
     };
 
-    _PwArray* array_data = get_array_data_ptr(self);
-    fprintf(fp, "%u items, capacity=%u\n", array_data->length, array_data->capacity);
+    _PwArray* array = get_array_struct_ptr(self);
+    fprintf(fp, "%u items, capacity=%u\n", array->length, array->capacity);
 
     next_indent += 4;
-    PwValuePtr item_ptr = array_data->items;
-    for (unsigned n = array_data->length; n; n--, item_ptr++) {
+    PwValuePtr item_ptr = array->items;
+    for (unsigned n = array->length; n; n--, item_ptr++) {
         _pw_call_dump(fp, item_ptr, next_indent, next_indent, &this_link);
     }
 }
 
-static PwResult array_to_string(PwValuePtr self)
+[[nodiscard]] static bool array_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool array_is_true(PwValuePtr self)
+[[nodiscard]] static bool array_is_true(PwValuePtr self)
 {
-    return get_array_data_ptr(self)->length;
+    return get_array_struct_ptr(self)->length;
 }
 
-static bool array_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool array_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
-    return _pw_array_eq(get_array_data_ptr(self), get_array_data_ptr(other));
+    return _pw_array_eq(get_array_struct_ptr(self), get_array_struct_ptr(other));
 }
 
-static bool array_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool array_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
         if (t == PwTypeId_Array) {
-            return _pw_array_eq(get_array_data_ptr(self), get_array_data_ptr(other));
+            return _pw_array_eq(get_array_struct_ptr(self), get_array_struct_ptr(other));
         }
         // check base type
         t = _pw_types[t]->ancestor_id;
@@ -173,90 +180,112 @@ static unsigned round_capacity(unsigned capacity)
     }
 }
 
-PwResult _pw_array_create(...)
+[[nodiscard]] bool _pw_array_va(PwValuePtr result, ...)
 {
     va_list ap;
     va_start(ap);
-    PwValue array = pw_create(PwTypeId_Array);
-    if (pw_error(&array)) {
-        // pw_array_append_ap destroys args on exit, we must do the same
+    if (!pw_create_array(result)) {
         _pw_destroy_args(ap);
-        return pw_move(&array);
+        va_end(ap);
+        return false;
     }
-    PwValue status = pw_array_append_ap(&array, ap);
+    bool ret = pw_array_append_ap(result, ap);
+    if (!ret) {
+        pw_destroy(result);
+    }
     va_end(ap);
-    pw_return_if_error(&status);
-    return pw_move(&array);
+    return ret;
 }
 
-PwResult _pw_alloc_array(PwTypeId type_id, _PwArray* array_data, unsigned capacity)
+[[nodiscard]] bool _pw_alloc_array(PwTypeId type_id, _PwArray* array, unsigned capacity)
 {
     if (capacity >= UINT_MAX / sizeof(_PwValue)) {
-        return PwError(PW_ERROR_DATA_SIZE_TOO_BIG);
+        pw_set_status(PwStatus(PW_ERROR_DATA_SIZE_TOO_BIG));
+        return false;
     }
 
-    array_data->length = 0;
-    array_data->capacity = round_capacity(capacity);
+    array->length = 0;
+    array->capacity = round_capacity(capacity);
 
-    unsigned memsize = array_data->capacity * sizeof(_PwValue);
-    array_data->items = _pw_types[type_id]->allocator->allocate(memsize, true);
-
-    pw_return_ok_or_oom( array_data->items );
+    unsigned memsize = array->capacity * sizeof(_PwValue);
+    array->items = _pw_alloc(type_id, memsize, true);
+    return (bool) array->items;
 }
 
-void _pw_destroy_array(PwTypeId type_id, _PwArray* array_data, PwValuePtr parent)
+[[nodiscard]] static bool _pw_array_pop(PwValuePtr array_value, PwValuePtr result)
 {
-    if (array_data->items) {
-        PwValuePtr item_ptr = array_data->items;
-        for (unsigned n = array_data->length; n; n--, item_ptr++) {
-            if (pw_is_compound(item_ptr)) {
-                _pw_abandon(parent, item_ptr);
-            }
-            pw_destroy(item_ptr);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->length == 0) {
+        pw_set_status(PwStatus(PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY));
+        return false;
+    }
+    array->length--;
+    PwValuePtr item_ptr = &array->items[array->length];
+    if (pw_is_compound(item_ptr)) {
+        _pw_abandon(array_value, item_ptr);
+    }
+    pw_destroy(item_ptr);
+   return true;
+}
+
+static void destroy_items(_PwArray* array, unsigned start_index, unsigned end_index, PwValuePtr parent)
+{
+    PwValuePtr item_ptr = &array->items[start_index];
+    for (unsigned i = start_index; i < end_index; i++, item_ptr++) {
+        if (pw_is_compound(item_ptr)) {
+            _pw_abandon(parent, item_ptr);
         }
-        unsigned memsize = array_data->capacity * sizeof(_PwValue);
-        _pw_types[type_id]->allocator->release((void**) &array_data->items, memsize);
+        pw_destroy(item_ptr);
     }
 }
 
-PwResult _pw_array_resize(PwTypeId type_id, _PwArray* array_data, unsigned desired_capacity)
+void _pw_destroy_array(PwTypeId type_id, _PwArray* array, PwValuePtr parent)
 {
-    if (desired_capacity < array_data->length) {
-        desired_capacity = array_data->length;
+    if (array->items) {
+        destroy_items(array, 0, array->length, parent);
+        unsigned memsize = array->capacity * sizeof(_PwValue);
+        _pw_free(type_id, (void**) &array->items, memsize);
+    }
+}
+
+[[nodiscard]] bool _pw_array_resize(PwTypeId type_id, _PwArray* array, unsigned desired_capacity)
+{
+    if (desired_capacity < array->length) {
+        desired_capacity = array->length;
     } else if (desired_capacity >= UINT_MAX / sizeof(_PwValue)) {
-        return PwError(PW_ERROR_DATA_SIZE_TOO_BIG);
+        pw_set_status(PwStatus(PW_ERROR_DATA_SIZE_TOO_BIG));
+        return false;
     }
     unsigned new_capacity = round_capacity(desired_capacity);
 
-    Allocator* allocator = _pw_types[type_id]->allocator;
-
-    unsigned old_memsize = array_data->capacity * sizeof(_PwValue);
+    unsigned old_memsize = array->capacity * sizeof(_PwValue);
     unsigned new_memsize = new_capacity * sizeof(_PwValue);
 
-    if (!allocator->reallocate((void**) &array_data->items, old_memsize, new_memsize, true, nullptr)) {
-        return PwOOM();
+    if (!_pw_realloc(type_id, (void**) &array->items, old_memsize, new_memsize, true)) {
+        return false;
     }
-    array_data->capacity = new_capacity;
-    return PwOK();
+    array->capacity = new_capacity;
+    return true;
 }
 
-PwResult pw_array_resize(PwValuePtr array, unsigned desired_capacity)
+[[nodiscard]] bool pw_array_resize(PwValuePtr array_value, unsigned desired_capacity)
 {
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
-    return _pw_array_resize(array->type_id, array_data, desired_capacity);
+    return _pw_array_resize(array_value->type_id, array, desired_capacity);
 }
 
-unsigned pw_array_length(PwValuePtr array)
+[[nodiscard]] unsigned pw_array_length(PwValuePtr array_value)
 {
-    pw_assert_array(array);
-    return _pw_array_length(get_array_data_ptr(array));
+    pw_assert_array(array_value);
+    return _pw_array_length(get_array_struct_ptr(array_value));
 }
 
-bool _pw_array_eq(_PwArray* a, _PwArray* b)
+[[nodiscard]] bool _pw_array_eq(_PwArray* a, _PwArray* b)
 {
     unsigned n = a->length;
     if (b->length != n) {
@@ -277,83 +306,82 @@ bool _pw_array_eq(_PwArray* a, _PwArray* b)
     return true;
 }
 
-PwResult _pw_array_append(PwValuePtr array, PwValuePtr item)
+[[nodiscard]] bool _pw_array_append(PwValuePtr array_value, PwValuePtr item)
 // XXX this will be an interface method, _pwi_array_append
 {
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
-    PwValue v = pw_clone(item);
-    return _pw_array_append_item(array->type_id, array_data, &v, array);
+    PwValue cloned_item = pw_clone(item);
+    return _pw_array_append_item(array_value->type_id, array, &cloned_item, array_value);
 }
 
-static PwResult grow_array(PwTypeId type_id, _PwArray* array_data)
+[[nodiscard]] static bool grow_array(PwTypeId type_id, _PwArray* array)
 {
-    pw_assert(array_data->length <= array_data->capacity);
+    pw_assert(array->length <= array->capacity);
 
-    if (array_data->length == array_data->capacity) {
+    if (array->length == array->capacity) {
         unsigned new_capacity;
-        if (array_data->capacity <= PWARRAY_CAPACITY_INCREMENT) {
-            new_capacity = array_data->capacity + PWARRAY_INITIAL_CAPACITY;
+        if (array->capacity <= PWARRAY_CAPACITY_INCREMENT) {
+            new_capacity = array->capacity + PWARRAY_INITIAL_CAPACITY;
         } else {
-            new_capacity = array_data->capacity + PWARRAY_CAPACITY_INCREMENT;
+            new_capacity = array->capacity + PWARRAY_CAPACITY_INCREMENT;
         }
-        pw_expect_ok( _pw_array_resize(type_id, array_data, new_capacity) );
+        if (!_pw_array_resize(type_id, array, new_capacity)) {
+            return false;
+        }
     }
-    return PwOK();
+    return true;
 }
 
-PwResult _pw_array_append_item(PwTypeId type_id, _PwArray* array_data, PwValuePtr item, PwValuePtr parent)
+[[nodiscard]] bool _pw_array_append_item(PwTypeId type_id, _PwArray* array, PwValuePtr item, PwValuePtr parent)
 {
-    if (pw_is_status(item)) {
-        // prohibit appending Status values
-        panic_status();
+    if (! grow_array(type_id, array)) {
+        return false;
     }
-    pw_expect_ok( grow_array(type_id, array_data) );
-    _pw_embrace(parent, item);
-    array_data->items[array_data->length] = pw_move(item);
-    array_data->length++;
-    return PwOK();
+    if (!_pw_embrace(parent, item)) {
+        return false;
+    }
+    pw_move(item, &array->items[array->length]);
+    array->length++;
+    return true;
 }
 
-PwResult _pw_array_append_va(PwValuePtr array, ...)
+[[nodiscard]] bool _pw_array_append_va(PwValuePtr array, ...)
 {
     va_list ap;
     va_start(ap);
-    PwValue result = pw_array_append_ap(array, ap);
+    bool ret = pw_array_append_ap(array, ap);
     va_end(ap);
-    return pw_move(&result);
+    return ret;
 }
 
-PwResult pw_array_append_ap(PwValuePtr dest, va_list ap)
+[[nodiscard]] bool pw_array_append_ap(PwValuePtr dest, va_list ap)
 {
     pw_assert_array(dest);
-    _PwArray* array_data = get_array_data_ptr(dest);
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    _PwArray* array = get_array_struct_ptr(dest);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
     PwTypeId type_id = dest->type_id;
     unsigned num_appended = 0;
-    PwValue error = PwOOM();  // default error is OOM unless some arg is a status
     for(;;) {{
         PwValue arg = va_arg(ap, _PwValue);
         if (pw_is_status(&arg)) {
-            if (pw_va_end(&arg)) {
-                return PwOK();
+            if (pw_is_va_end(&arg)) {
+                return true;
             }
-            pw_destroy(&error);
-            error = pw_move(&arg);
+            pw_set_status(pw_clone(&arg));
             goto failure;
         }
         if (!pw_charptr_to_string_inplace(&arg)) {
             goto failure;
         }
-        PwValue status = _pw_array_append_item(type_id, array_data, &arg, dest);
-        if (pw_error(&status)) {
-            pw_destroy(&error);
-            error = pw_move(&status);
+        if (!_pw_array_append_item(type_id, array, &arg, dest)) {
             goto failure;
         }
         num_appended++;
@@ -362,249 +390,264 @@ PwResult pw_array_append_ap(PwValuePtr dest, va_list ap)
 failure:
     // rollback
     while (num_appended--) {
-        PwValue v = _pw_array_pop(array_data);
-        pw_destroy(&v);
+        PwValue v = PW_NULL;
+        if (_pw_array_pop(dest, &v)) {
+            pw_destroy(&v);
+        }
     }
     // consume args
     _pw_destroy_args(ap);
-    return pw_move(&error);
+    return true;
 }
 
-PwResult _pw_array_insert(PwValuePtr array, unsigned index, PwValuePtr item)
+[[nodiscard]] bool _pw_array_insert(PwValuePtr array_value, unsigned index, PwValuePtr item)
 {
-    if (pw_is_status(item)) {
-        // prohibit appending Status values
-        panic_status();
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    if (index > array->length) {
+        pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+        return false;
     }
-    if (index > array_data->length) {
-        return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+    if (!grow_array(array_value->type_id, array)) {
+        return false;
     }
-    pw_expect_ok( grow_array(array->type_id, array_data) );
-
-    _pw_embrace(array, item);
-    if (index < array_data->length) {
-        memmove(&array_data->items[index + 1], &array_data->items[index], (array_data->length - index) * sizeof(_PwValue));
+    if (!_pw_embrace(array_value, item)) {
+        return false;
     }
-    array_data->items[index] = pw_clone(item);
-    array_data->length++;
-    return PwOK();
+    if (index < array->length) {
+        memmove(&array->items[index + 1], &array->items[index], (array->length - index) * sizeof(_PwValue));
+    }
+    __pw_clone(item, &array->items[index]);  // destination contains garbage, so use __pw_clone here
+    array->length++;
+    return true;
 }
 
-PwResult _pw_array_item_signed(PwValuePtr array, ssize_t index)
+[[nodiscard]] bool _pw_array_item_signed(PwValuePtr array_value, ssize_t index, PwValuePtr result)
 {
-    pw_assert_array(array);
+    pw_assert_array(array_value);
 
-    _PwArray* array_data = get_array_data_ptr(array);
+    _PwArray* array = get_array_struct_ptr(array_value);
 
     if (index < 0) {
-        index = array_data->length + index;
+        index = array->length + index;
         if (index < 0) {
-            return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+            pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+            return false;
         }
-    } else if (index >= array_data->length) {
-        return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+    } else if (index >= array->length) {
+        pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+        return false;
     }
-    return pw_clone(&array_data->items[index]);
+    pw_clone2(&array->items[index], result);
+    return true;
 }
 
-PwResult _pw_array_item(PwValuePtr array, unsigned index)
+[[nodiscard]] bool _pw_array_item(PwValuePtr array_value, unsigned index, PwValuePtr result)
 {
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (index < array_data->length) {
-        return pw_clone(&array_data->items[index]);
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (index < array->length) {
+        pw_destroy(result);
+        pw_clone2(&array->items[index], result);
+        return true;
     } else {
-        return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+        pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+        return false;
     }
 }
 
-PwResult _pw_array_set_item_signed(PwValuePtr array, ssize_t index, PwValuePtr item)
+[[nodiscard]] bool _pw_array_set_item_signed(PwValuePtr array_value, ssize_t index, PwValuePtr item)
 {
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
     if (index < 0) {
-        index = array_data->length + index;
+        index = array->length + index;
         if (index < 0) {
-            return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+            pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+            return false;
         }
-    } else if (index >= array_data->length) {
-        return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+    } else if (index >= array->length) {
+        pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+        return false;
     }
-
-    pw_destroy(&array_data->items[index]);
-    array_data->items[index] = pw_clone(item);
-    return PwOK();
+    pw_clone2(item, &array->items[index]);
+    return true;
 }
 
-PwResult _pw_array_set_item(PwValuePtr array, unsigned index, PwValuePtr item)
+[[nodiscard]] bool _pw_array_set_item(PwValuePtr array_value, unsigned index, PwValuePtr item)
 {
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
-    if (index < array_data->length) {
-        pw_destroy(&array_data->items[index]);
-        array_data->items[index] = pw_clone(item);
-        return PwOK();
+    if (index < array->length) {
+        pw_clone2(item, &array->items[index]);
+        return true;
     } else {
-        return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+        pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+        return false;
     }
 }
 
-PwResult pw_array_pull(PwValuePtr array)
+[[nodiscard]] bool pw_array_pull(PwValuePtr array_value, PwValuePtr result)
 {
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
-    if (array_data->length == 0) {
-        return PwError(PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY);
+    if (array->length == 0) {
+        pw_set_status(PwStatus(PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY));
+        return false;
     }
-    _PwValue result = pw_clone(&array_data->items[0]);
-    _pw_array_del(array_data, 0, 1);
-    return result;
+    pw_move(&array->items[0], result);
+    _pw_array_del(array, 0, 1, array_value);
+    return true;
 }
 
-PwResult pw_array_pop(PwValuePtr array)
+[[nodiscard]] bool pw_array_pop(PwValuePtr array_value, PwValuePtr result)
 {
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
-    return _pw_array_pop(array_data);
+    return _pw_array_pop(array_value, result);
 }
 
-PwResult _pw_array_pop(_PwArray* array_data)
+void pw_array_del(PwValuePtr array_value, unsigned start_index, unsigned end_index)
 {
-    if (array_data->length == 0) {
-        return PwError(PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY);
-    }
-    array_data->length--;
-    return pw_move(&array_data->items[array_data->length]);
-}
-
-void pw_array_del(PwValuePtr array, unsigned start_index, unsigned end_index)
-{
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return; // PwError(PW_ERROR_ITERATION_IN_PROGRESS);
-    }
-    _pw_array_del(array_data, start_index, end_index);
-}
-
-void pw_array_clean(PwValuePtr array)
-{
-    pw_assert_array(array);
-    _PwArray* array_data = get_array_data_ptr(array);
-    if (array_data->itercount) {
-        return; // PwError(PW_ERROR_ITERATION_IN_PROGRESS);
-    }
-    _pw_array_del(array_data, 0, UINT_MAX);
-}
-
-void _pw_array_del(_PwArray* array_data, unsigned start_index, unsigned end_index)
-{
-    if (array_data->length == 0) {
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        // pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
         return;
     }
-    if (end_index > array_data->length) {
-        end_index = array_data->length;
+    _pw_array_del(array, start_index, end_index, array_value);
+}
+
+void pw_array_clean(PwValuePtr array_value)
+{
+    pw_assert_array(array_value);
+    _PwArray* array = get_array_struct_ptr(array_value);
+    if (array->itercount) {
+        // pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return;
+    }
+    _pw_array_del(array, 0, UINT_MAX, array_value);
+}
+
+void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, PwValuePtr parent)
+{
+    if (array->length == 0) {
+        return;
+    }
+    if (end_index > array->length) {
+        end_index = array->length;
     }
     if (start_index >= end_index) {
         return;
     }
 
-    PwValuePtr item_ptr = &array_data->items[start_index];
-    for (unsigned i = start_index; i < end_index; i++, item_ptr++) {
-        pw_destroy(item_ptr);
-    }
-    unsigned new_length = array_data->length - (end_index - start_index);
-    unsigned tail_length = array_data->length - end_index;
+    destroy_items(array, start_index, end_index, parent);
+
+    unsigned new_length = array->length - (end_index - start_index);
+    unsigned tail_length = array->length - end_index;
     if (tail_length) {
-        memmove(&array_data->items[start_index], &array_data->items[end_index], tail_length * sizeof(_PwValue));
-        memset(&array_data->items[new_length], 0, (array_data->length - new_length) * sizeof(_PwValue));
+        memmove(&array->items[start_index], &array->items[end_index], tail_length * sizeof(_PwValue));
+        memset(&array->items[new_length], 0, (array->length - new_length) * sizeof(_PwValue));
     }
-    array_data->length = new_length;
+    array->length = new_length;
 }
 
-PwResult pw_array_slice(PwValuePtr array, unsigned start_index, unsigned end_index)
+[[nodiscard]] bool pw_array_slice(PwValuePtr array_value, unsigned start_index, unsigned end_index, PwValuePtr result)
 {
-    _PwArray* src_array = get_array_data_ptr(array);
+    _PwArray* src_array = get_array_struct_ptr(array_value);
     unsigned length = _pw_array_length(src_array);
 
     if (end_index > length) {
         end_index = length;
     }
-    if (start_index >= end_index) {
-        // return empty array
-        return PwArray();
+    if (start_index > end_index) {
+        start_index = end_index;
     }
     unsigned slice_len = end_index - start_index;
+    // XXX array constructor arg: initial size
+    if (!pw_create_array(result)) {
+        return false;
+    }
+    if (slice_len == 0) {
+        return true;
+    }
+    if (!pw_array_resize(result, slice_len)) {
+        return false;
+    }
 
-    PwValue dest = PwArray();
-    pw_return_if_error(&dest);
-
-    pw_expect_ok( pw_array_resize(&dest, slice_len) );
-
-    _PwArray* dest_array = get_array_data_ptr(&dest);
+    _PwArray* dest_array = get_array_struct_ptr(result);
 
     PwValuePtr src_item_ptr = &src_array->items[start_index];
     PwValuePtr dest_item_ptr = dest_array->items;
     for (unsigned i = start_index; i < end_index; i++) {
-        *dest_item_ptr = pw_clone(src_item_ptr);
+        __pw_clone(src_item_ptr, dest_item_ptr);  // no need to destroy dest_item, so use __pw_clone here
         src_item_ptr++;
         dest_item_ptr++;
         dest_array->length++;
     }
-    return pw_move(&dest);
+    return true;
 }
 
-PwResult _pw_array_join_c32(char32_t separator, PwValuePtr array)
+[[nodiscard]] bool _pw_array_join_c32(char32_t separator, PwValuePtr array, PwValuePtr result)
 {
     char32_t s[2] = {separator, 0};
     PwValue sep = PwChar32Ptr(s);
-    return _pw_array_join(&sep, array);
+    return _pw_array_join(&sep, array, result);
 }
 
-PwResult _pw_array_join_u8(char8_t* separator, PwValuePtr array)
+[[nodiscard]] bool _pw_array_join_u8(char8_t* separator, PwValuePtr array, PwValuePtr result)
 {
     PwValue sep = PwCharPtr(separator);
-    return _pw_array_join(&sep, array);
+    return _pw_array_join(&sep, array, result);
 }
 
-PwResult _pw_array_join_u32(char32_t*  separator, PwValuePtr array)
+[[nodiscard]] bool _pw_array_join_u32(char32_t*  separator, PwValuePtr array, PwValuePtr result)
 {
     PwValue sep = PwChar32Ptr(separator);
-    return _pw_array_join(&sep, array);
+    return _pw_array_join(&sep, array, result);
 }
 
-PwResult _pw_array_join(PwValuePtr separator, PwValuePtr array)
+[[nodiscard]] bool _pw_array_join(PwValuePtr separator, PwValuePtr array, PwValuePtr result)
 {
     unsigned num_items = pw_array_length(array);
     if (num_items == 0) {
-        return PwString();
+        *result = PwString(0, {});
+        return true;
     }
     if (num_items == 1) {
-        PwValue item = pw_array_item(array, 0);
+        PwValue item = PW_NULL;
+        if (!pw_array_item(array, 0, &item)) {
+            return false;
+        }
         if (pw_is_string(&item)) {
-            return pw_move(&item);
+            pw_move(&item, result);
+            return true;
         } if (pw_is_charptr(&item)) {
-            return pw_charptr_to_string(&item);
+            return pw_charptr_to_string(&item, result);
         } else {
             // XXX skipping non-string values
-            return PwString();
+            *result = PwString(0, {});
+            return true;
         }
     }
 
@@ -619,10 +662,10 @@ PwResult _pw_array_join(PwValuePtr separator, PwValuePtr array)
         separator_len = _pw_charptr_strlen2(separator, &max_char_size);
 
     } else {
-        PwValue error = PwError(PW_ERROR_INCOMPATIBLE_TYPE);
-        _pw_set_status_desc(&error, "Bad separator type for pw_array_join: %u, %s",
-                            separator->type_id, pw_get_type_name(separator->type_id));
-        return pw_move(&error);
+        pw_set_status(PwStatus(PW_ERROR_INCOMPATIBLE_TYPE),
+                      "Bad separator type for pw_array_join: %u, %s",
+                      separator->type_id, pw_get_type_name(separator->type_id));
+        return false;
     }
 
     // calculate total length and max char width of string items
@@ -631,7 +674,10 @@ PwResult _pw_array_join(PwValuePtr separator, PwValuePtr array)
         if (i) {
             result_len += separator_len;
         }
-        PwValue item = pw_array_item(array, i);
+        PwValue item = PW_NULL;
+        if (!pw_array_item(array, i, &item)) {
+            return false;
+        }
         uint8_t char_size;
         if (pw_is_string(&item)) {
             char_size = _pw_string_char_size(&item);
@@ -648,28 +694,38 @@ PwResult _pw_array_join(PwValuePtr separator, PwValuePtr array)
     }}
 
     // join array items
-    PwValue result = pw_create_empty_string(result_len, max_char_size);
-    pw_return_if_error(&result);
-
+    if (!pw_create_empty_string(result_len, max_char_size, result)) {
+        return false;
+    }
     for (unsigned i = 0; i < num_items; i++) {{   // nested scope for autocleaning item
-        PwValue item = pw_array_item(array, i);
+        PwValue item = PW_NULL;
+        if (!pw_array_item(array, i, &item)) {
+            return false;
+        }
         if (pw_is_string(&item) || pw_is_charptr(&item)) {
             if (i) {
-                pw_expect_true( _pw_string_append(&result, separator) );
+                if (!_pw_string_append(result, separator)) {
+                    pw_destroy(result);
+                    return false;
+                }
             }
-            pw_expect_true( _pw_string_append(&result, &item) );
+            if (!_pw_string_append(result, &item)) {
+                pw_destroy(result);
+                return false;
+            }
         }
     }}
-    return pw_move(&result);
+    return true;
 }
 
-PwResult pw_array_dedent(PwValuePtr lines)
+[[nodiscard]] bool pw_array_dedent(PwValuePtr lines)
 {
     // dedent inplace, so access items directly to avoid cloning
-    _PwArray* array_data = get_array_data_ptr(lines);
+    _PwArray* array = get_array_struct_ptr(lines);
 
-    if (array_data->itercount) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+    if (array->itercount) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
 
     static char32_t indent_chars[] = {' ', '\t', 0};
@@ -681,30 +737,30 @@ PwResult pw_array_dedent(PwValuePtr lines)
     // measure indents
     unsigned min_indent = UINT_MAX;
     for (unsigned i = 0; i < n; i++) {
-        PwValuePtr line = &array_data->items[i];
+        PwValuePtr line = &array->items[i];
+        indent[i] = 0;
         if (pw_is_string(line)) {
             indent[i] = pw_string_skip_chars(line, 0, indent_chars);
-            if (_pw_string_length(line) && indent[i] < min_indent) {
+            if (indent[i] && indent[i] < min_indent) {
                 min_indent = indent[i];
             }
-        } else {
-            indent[i] = 0;
         }
     }
-    if (min_indent == UINT_MAX || min_indent == 0) {
+    if (min_indent == UINT_MAX) {
         // nothing to dedent
-        return PwOK();
+        return true;
     }
 
+    // dedent
     for (unsigned i = 0; i < n; i++) {
         if (indent[i]) {
-            PwValuePtr line = &array_data->items[i];
+            PwValuePtr line = &array->items[i];
             if (!pw_string_erase(line, 0, min_indent)) {
-                return PwOOM();
+                return false;
             }
         }
     }
-    return PwOK();
+    return true;
 }
 
 
@@ -712,22 +768,25 @@ PwResult pw_array_dedent(PwValuePtr lines)
  * RandomAccess interface
  */
 
-static PwResult key_to_index(PwValuePtr key)
+[[nodiscard]] static bool key_to_index(PwValuePtr key, PwValuePtr result)
 /*
  * Convert key to integer index, either signed or unsigned.
  */
 {
-    // clone key for two reasons:
-    // 1) it's the result;
-    // 2) convert CharPtr to String
-
-    PwValue k = pw_clone(key);
-
+    PwValue k = PW_NULL;
+    if (pw_is_charptr(key)) {
+        if (!pw_charptr_to_string(key, &k)) {
+            return false;
+        }
+    } else {
+        pw_clone2(key, &k);
+    }
     if (pw_is_string(&k)) {
-        PwValue index = pw_parse_number(&k);
-        pw_return_if_error(&index);
-        pw_destroy(&k);
-        k = pw_move(&index);
+        PwValue index = PW_NULL;
+        if (!pw_parse_number(&k, &index)) {
+            return false;
+        }
+        pw_move(&index, &k);
         // continue with bounds checking
     }
 
@@ -738,41 +797,52 @@ static PwResult key_to_index(PwValuePtr key)
     if (pw_is_unsigned(&k)) {
 #       if UINT_MAX < PW_UNSIGNED_MAX
             if (k.unsigned_value < UINT_MAX) {
-                return pw_move(&k);
+                pw_move(&k, result);
+                return true;
             }
-            return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+            pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+            return false;
 #       else
-            return pw_move(&k);
+            pw_move(&k, result);
+            return true;
 #       endif
     }
     if (pw_is_signed(&k)) {
 #       if INT_MAX < PW_SIGNED_MAX
             if (INT_MIN < k.signed_value && k.signed_value < INT_MAX) {
-                return pw_move(&k);
+                pw_move(&k, result);
+                return true;
             }
-            return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+            pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+            return false;
 #       else
-            return pw_move(&k);
+            pw_move(&k, result);
+            return true;
 #       endif
     }
-    return PwError(PW_ERROR_INCOMPATIBLE_TYPE);
+    pw_set_status(PwStatus(PW_ERROR_INCOMPATIBLE_TYPE));
+    return false;
 }
 
-static PwResult ra_get_item(PwValuePtr self, PwValuePtr key)
+[[nodiscard]] static bool ra_get_item(PwValuePtr self, PwValuePtr key, PwValuePtr result)
 {
-    PwValue index = key_to_index(key);
-    pw_return_if_error(&index);
+    PwValue index = PW_NULL;
+    if (!key_to_index(key, &index)) {
+        return false;
+    }
     if (pw_is_unsigned(&index)) {
-        return _pw_array_item(self, index.unsigned_value);
+        return _pw_array_item(self, index.unsigned_value, result);
     } else {
-        return _pw_array_item_signed(self, index.signed_value);
+        return _pw_array_item_signed(self, index.signed_value, result);
     }
 }
 
-static PwResult ra_set_item(PwValuePtr self, PwValuePtr key, PwValuePtr value)
+[[nodiscard]] static bool ra_set_item(PwValuePtr self, PwValuePtr key, PwValuePtr value)
 {
-    PwValue index = key_to_index(key);
-    pw_return_if_error(&index);
+    PwValue index = PW_NULL;
+    if (!key_to_index(key, &index)) {
+        return false;
+    }
     if (pw_is_unsigned(&index)) {
         return _pw_array_set_item(self, index.unsigned_value, value);
     } else {
@@ -780,11 +850,12 @@ static PwResult ra_set_item(PwValuePtr self, PwValuePtr key, PwValuePtr value)
     }
 }
 
-static PwResult ra_delete_item(PwValuePtr self, PwValuePtr key)
+[[nodiscard]] static bool ra_delete_item(PwValuePtr self, PwValuePtr key)
 {
-    PwValue index = key_to_index(key);
-    pw_return_if_error(&index);
-
+    PwValue index = PW_NULL;
+    if (!key_to_index(key, &index)) {
+        return false;
+    }
     unsigned i;
     if (pw_is_unsigned(&index)) {
         i = index.unsigned_value;
@@ -793,12 +864,13 @@ static PwResult ra_delete_item(PwValuePtr self, PwValuePtr key)
             index.signed_value += pw_array_length(self);
         }
         if (index.signed_value < 0) {
-            return PwError(PW_ERROR_INDEX_OUT_OF_RANGE);
+            pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
+            return false;
         }
         i = index.signed_value;
     }
     pw_array_del(self, i, i + 1);
-    return PwOK();
+    return true;
 }
 
 static PwInterface_RandomAccess random_access_interface = {

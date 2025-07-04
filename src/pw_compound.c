@@ -6,7 +6,7 @@
 #include "src/pw_struct_internal.h"
 
 
-PwValuePtr _pw_on_chain(PwValuePtr value, _PwCompoundChain* tail)
+[[nodiscard]] PwValuePtr _pw_on_chain(PwValuePtr value, _PwCompoundChain* tail)
 {
     while (tail) {
         if (value->struct_data == tail->value->struct_data) {
@@ -27,7 +27,7 @@ static inline _PwParentsChunk* get_parents_list(_PwCompoundData* cdata)
     return (_PwParentsChunk*) ptr;
 }
 
-bool _pw_is_embraced(PwValuePtr value)
+[[nodiscard]] bool _pw_is_embraced(PwValuePtr value)
 {
     _PwCompoundData* cdata = _pw_compound_data_ptr(value);
 
@@ -43,7 +43,7 @@ bool _pw_is_embraced(PwValuePtr value)
     return false;
 }
 
-bool _pw_adopt(PwValuePtr parent, PwValuePtr child)
+[[nodiscard]] bool _pw_adopt(PwValuePtr parent, PwValuePtr child)
 {
     _PwCompoundData* parent_cdata = _pw_compound_data_ptr(parent);
     _PwCompoundData* child_cdata = _pw_compound_data_ptr(child);
@@ -173,7 +173,7 @@ static void shrink_parents_list(_PwCompoundData* child, _PwParentsChunk* chunk_p
     child->num_parents_chunks--;
 }
 
-bool _pw_abandon(PwValuePtr parent, PwValuePtr child)
+[[nodiscard]] bool _pw_abandon(PwValuePtr parent, PwValuePtr child)
 {
     _PwCompoundData* parent_cdata = _pw_compound_data_ptr(parent);
     _PwCompoundData* child_cdata = _pw_compound_data_ptr(child);
@@ -279,7 +279,7 @@ static unsigned check_cyclic_refs(_PwCompoundData* first, _PwCompoundData* cdata
     return result;
 }
 
-bool _pw_need_break_cyclic_refs(PwValuePtr value)
+[[nodiscard]] bool _pw_need_break_cyclic_refs(PwValuePtr value)
 {
     _PwCompoundData* cdata = _pw_compound_data_ptr(value);
     return check_cyclic_refs(cdata, cdata) == HAVE_CYCLIC_REFS;

@@ -5,43 +5,41 @@
 #include "src/pw_struct_internal.h"
 
 typedef struct {
-    _PwArray* array_data;  // cached array data, also indicates that iteratioo is in progress
+    _PwArray* array;  // cached pointer to array structure, also indicates that iteratioo is in progress
     unsigned index;
     int increment;
     unsigned line_number;  // does not match index because line reader may skip non-strings
 } _PwArrayIterator;
 
-#define get_data_ptr(value)  ((_PwArrayIterator*) _pw_get_data_ptr((value), PwTypeId_ArrayIterator))
+#define get_array_iterator_ptr(value)  ((_PwArrayIterator*) _pw_get_data_ptr((value), PwTypeId_ArrayIterator))
 
-
-static bool start_iteration(PwValuePtr self)
+[[nodiscard]] static bool start_iteration(PwValuePtr self)
 {
-    _PwArrayIterator* data = get_data_ptr(self);
-    if (data->array_data) {
-        // iteration is already in progress
+    _PwArrayIterator* iterator = get_array_iterator_ptr(self);
+    if (iterator->array) {
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
         return false;
     }
-    // cache array data
-    _PwIterator* iter_data = get_iterator_data_ptr(self);
-    data->array_data = get_array_data_ptr(&iter_data->iterable);
+    // cache pointer to array structure
+    iterator->array = get_array_struct_ptr(&get_iterator_ptr(self)->iterable);
 
     // init iterator state
-    data->index = 0;
-    data->increment = 1;
+    iterator->index = 0;
+    iterator->increment = 1;
 
     // increment itercount of array
-    data->array_data->itercount++;
+    iterator->array->itercount++;
     return true;
 }
 
 static void stop_iteration(PwValuePtr self)
 {
-    _PwArrayIterator* data = get_data_ptr(self);
-    if (data->array_data) {
+    _PwArrayIterator* iterator = get_array_iterator_ptr(self);
+    if (iterator->array) {
         // decrement itercount of array
-        data->array_data->itercount--;
-        // reset cached array data
-        data->array_data = nullptr;
+        iterator->array->itercount--;
+        // reset pointer to array structure
+        iterator->array = nullptr;
     }
 }
 
@@ -49,69 +47,51 @@ static void stop_iteration(PwValuePtr self)
  * LineReader interface
  */
 
-static PwResult start_read_lines(PwValuePtr self)
+[[nodiscard]] static bool start_read_lines(PwValuePtr self)
 {
     if (!start_iteration(self)) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+        return false;
     }
-    _PwArrayIterator* data = get_data_ptr(self);
-    data->line_number = 1;
-    return PwOK();
+    _PwArrayIterator* iterator = get_array_iterator_ptr(self);
+    iterator->line_number = 1;
+    return true;
 }
 
-static PwResult read_line(PwValuePtr self)
+[[nodiscard]] static bool read_line(PwValuePtr self, PwValuePtr result)
 {
-    _PwArrayIterator* data = get_data_ptr(self);
+    _PwArrayIterator* iterator = get_array_iterator_ptr(self);
 
-    while (data->index < data->array_data->length) {{
-        PwValue result = pw_clone(&data->array_data->items[data->index++]);
-        if (pw_is_string(&result)) {
-            data->line_number++;
-            return pw_move(&result);
+    while (iterator->index < iterator->array->length) {
+        PwValuePtr item_ptr = &iterator->array->items[iterator->index++];
+        if (pw_is_string(item_ptr)) {
+            pw_clone2(item_ptr, result);
+            iterator->line_number++;
+            return true;
         }
-    }}
-    return PwError(PW_ERROR_EOF);
+    }
+    pw_set_status(PwStatus(PW_ERROR_EOF));
+    return false;
 }
 
-static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
+[[nodiscard]] static bool unread_line(PwValuePtr self, PwValuePtr line)
 {
-    pw_destroy(line);
-
-    _PwArrayIterator* data = get_data_ptr(self);
-    _PwIterator* iter_data = get_iterator_data_ptr(self);
-    _PwArray* array_data = get_array_data_ptr(&iter_data->iterable);
-
-    while (data->index < array_data->length) {{
-        PwValue result = pw_clone(&array_data->items[data->index++]);
-        if (pw_is_string(&result)) {
-            *line = pw_move(&result);
-            data->line_number++;
-            return PwOK();
-        }
-    }}
-    return PwError(PW_ERROR_EOF);
-}
-
-static bool unread_line(PwValuePtr self, PwValuePtr line)
-{
-    _PwArrayIterator* data = get_data_ptr(self);
-    _PwIterator* iter_data = get_iterator_data_ptr(self);
-    _PwArray* array_data = get_array_data_ptr(&iter_data->iterable);
+    _PwArrayIterator* iterator = get_array_iterator_ptr(self);
+    _PwArray* array = get_array_struct_ptr(&get_iterator_ptr(self)->iterable);
 
     // simply decrement iteration index, that's equivalent to pushback
-    while (data->index) {
-        if (pw_is_string(&array_data->items[data->index--])) {
-            data->line_number--;
+    while (iterator->index) {
+        if (pw_is_string(&array->items[iterator->index--])) {
+            iterator->line_number--;
             return true;
         }
     }
     return false;
 }
 
-static unsigned get_line_number(PwValuePtr self)
+[[nodiscard]] static unsigned get_line_number(PwValuePtr self)
 {
-    _PwArrayIterator* data = get_data_ptr(self);
-    return data->line_number;
+    _PwArrayIterator* iterator = get_array_iterator_ptr(self);
+    return iterator->line_number;
 }
 
 static void stop_read_lines(PwValuePtr self)
@@ -122,7 +102,8 @@ static void stop_read_lines(PwValuePtr self)
 static PwInterface_LineReader line_reader_interface = {
     .start             = start_read_lines,
     .read_line         = read_line,
-    .read_line_inplace = read_line_inplace,
+    .read_line_inplace = read_line, // `read_line` clones list item. Truly reading in-place would imply copying.
+
     .get_line_number   = get_line_number,
     .unread_line       = unread_line,
     .stop              = stop_read_lines

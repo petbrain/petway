@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include "include/pw.h"
+#include "src/pw_alloc.h"
 #include "src/pw_charptr_internal.h"
 #include "src/pw_compound_internal.h"
 #include "src/pw_map_internal.h"
@@ -9,20 +10,18 @@
 
 #define get_data_ptr(value)  _pw_get_data_ptr((value), PwTypeId_Map)
 
-PwResult _pw_map_create(...)
+[[nodiscard]] bool _pw_map_va(PwValuePtr result, ...)
 {
     va_list ap;
     va_start(ap);
-    PwValue map = pw_create(PwTypeId_Map);
-    if (pw_error(&map)) {
-        // pw_map_update_ap destroys args on exit, we must do the same
+    if (!pw_create(PwTypeId_Map, result)) {
         _pw_destroy_args(ap);
-        return pw_move(&map);
+        va_end(ap);
+        return false;
     }
-    PwValue status = pw_map_update_ap(&map, ap);
+    bool ret = pw_map_update_ap(result, ap);
     va_end(ap);
-    pw_return_if_error(&status);
-    return pw_move(&map);
+    return ret;
 }
 
 static inline unsigned get_map_length(_PwMap* map)
@@ -107,8 +106,8 @@ static void set_ht_item(struct _PwHashTable* ht, unsigned index, unsigned value)
  * kv_index = key_index / 2
  */
 
-static bool init_hash_table(PwTypeId type_id, struct _PwHashTable* ht,
-                            unsigned old_capacity, unsigned new_capacity)
+[[nodiscard]] static bool init_hash_table(PwTypeId type_id, struct _PwHashTable* ht,
+                                          unsigned old_capacity, unsigned new_capacity)
 {
     unsigned old_item_size = get_item_size(old_capacity);
     unsigned old_memsize = old_item_size * old_capacity;
@@ -119,7 +118,7 @@ static bool init_hash_table(PwTypeId type_id, struct _PwHashTable* ht,
     // reallocate items
     // if map is new, ht is initialized to all zero
     // if map is doubled, this reallocates the block
-    if (!_pw_types[type_id]->allocator->reallocate((void**) &ht->items, old_memsize, new_memsize, true, nullptr)) {
+    if (!_pw_realloc(type_id, (void**) &ht->items, old_memsize, new_memsize, false)) {
         return false;
     }
     memset(ht->items, 0, new_memsize);
@@ -158,7 +157,7 @@ static bool init_hash_table(PwTypeId type_id, struct _PwHashTable* ht,
 static void free_hash_table(PwTypeId type_id, struct _PwHashTable* ht)
 {
     unsigned ht_memsize = get_item_size(ht->capacity) * ht->capacity;
-    _pw_types[type_id]->allocator->release((void**) &ht->items, ht_memsize);
+    _pw_free(type_id, (void**) &ht->items, ht_memsize);
 }
 
 static unsigned lookup(_PwMap* map, PwValuePtr key, unsigned* ht_index, unsigned* ht_offset)
@@ -231,7 +230,7 @@ static unsigned set_hash_table_item(struct _PwHashTable* hash_table, unsigned ht
     } while (true);
 }
 
-static PwResult _pw_map_expand(PwTypeId type_id, _PwMap* map, unsigned desired_capacity, unsigned ht_offset)
+[[ nodiscard]] static bool _pw_map_expand(PwTypeId type_id, _PwMap* map, unsigned desired_capacity, unsigned ht_offset)
 /*
  * Expand map if necessary.
  *
@@ -241,7 +240,9 @@ static PwResult _pw_map_expand(PwTypeId type_id, _PwMap* map, unsigned desired_c
     // expand array if necessary
     unsigned array_cap = desired_capacity << 1;
     if (array_cap > _pw_array_capacity(&map->kv_pairs)) {
-        pw_expect_ok( _pw_array_resize(type_id, &map->kv_pairs, array_cap) );
+        if (!_pw_array_resize(type_id, &map->kv_pairs, array_cap)) {
+            return false;
+        }
     }
 
     struct _PwHashTable* ht = &map->hash_table;
@@ -249,7 +250,7 @@ static PwResult _pw_map_expand(PwTypeId type_id, _PwMap* map, unsigned desired_c
     // check if hash table needs expansion
     unsigned quarter_cap = ht->capacity >> 2;
     if ((ht->capacity >= desired_capacity + quarter_cap) && (ht_offset < quarter_cap)) {
-        return PwOK();
+        return true;
     }
 
     unsigned new_capacity = ht->capacity << 1;
@@ -258,7 +259,9 @@ static PwResult _pw_map_expand(PwTypeId type_id, _PwMap* map, unsigned desired_c
         new_capacity <<= 1;
     }
 
-    pw_expect_true( init_hash_table(type_id, ht, ht->capacity, new_capacity) );
+    if (!init_hash_table(type_id, ht, ht->capacity, new_capacity)) {
+        return false;
+    }
 
     // rebuild hash table
     PwValuePtr key_ptr = &map->kv_pairs.items[0];
@@ -271,10 +274,10 @@ static PwResult _pw_map_expand(PwTypeId type_id, _PwMap* map, unsigned desired_c
         n -= 2;
         kv_index++;
     }
-    return PwOK();
+    return true;
 }
 
-static PwResult update_map(PwValuePtr map, PwValuePtr key, PwValuePtr value)
+[[nodiscard]] static bool update_map(PwValuePtr map, PwValuePtr key, PwValuePtr value)
 /*
  * key and value are moved to the internal array
  */
@@ -291,21 +294,23 @@ static PwResult update_map(PwValuePtr map, PwValuePtr key, PwValuePtr value)
         // found key, update value
         unsigned value_index = key_index + 1;
         PwValuePtr v_ptr = &__map->kv_pairs.items[value_index];
-        pw_destroy(v_ptr);
-        *v_ptr = pw_move(value);
-        return PwOK();
+        pw_move(value, v_ptr);
+        return true;
     }
 
     // key not found, insert
 
-    pw_expect_ok( _pw_map_expand(type_id, __map, get_map_length(__map) + 1, ht_offset) );
+    if (!_pw_map_expand(type_id, __map, get_map_length(__map) + 1, ht_offset)) {
+        return false;
+    }
 
     // append key and value
     unsigned kv_index = _pw_array_length(&__map->kv_pairs) >> 1;
     set_hash_table_item(&__map->hash_table, pw_hash(key), kv_index + 1);
 
-    pw_expect_ok( _pw_array_append_item(type_id, &__map->kv_pairs, key, map) );
-
+    if (!_pw_array_append_item(type_id, &__map->kv_pairs, key, map)) {
+        return false;
+    }
     return _pw_array_append_item(type_id, &__map->kv_pairs, value, map);
 }
 
@@ -323,20 +328,22 @@ static void map_fini(PwValuePtr self)
     free_hash_table(self->type_id, ht);
 }
 
-static PwResult map_init(PwValuePtr self, void* ctor_args)
+[[nodiscard]] static bool map_init(PwValuePtr self, void* ctor_args)
 {
     // XXX not using ctor_args for now
+    // XXX add capacity parameter
 
     _PwMap* map = get_data_ptr(self);
     struct _PwHashTable* ht = &map->hash_table;
     ht->items_used = 0;
-    pw_expect_true( init_hash_table(self->type_id, ht, 0, PWMAP_INITIAL_CAPACITY) );
-
-    PwValue status = _pw_alloc_array(self->type_id, &map->kv_pairs, PWMAP_INITIAL_CAPACITY * 2);
-    if (pw_error(&status)) {
-        map_fini(self);
+    if (!init_hash_table(self->type_id, ht, 0, PWMAP_INITIAL_CAPACITY)) {
+        return false;
     }
-    return pw_move(&status);
+    if (!_pw_alloc_array(self->type_id, &map->kv_pairs, PWMAP_INITIAL_CAPACITY * 2)) {
+        map_fini(self);
+        return false;
+    }
+    return true;
 }
 
 static void map_hash(PwValuePtr self, PwHashContext* ctx)
@@ -349,23 +356,29 @@ static void map_hash(PwValuePtr self, PwHashContext* ctx)
     }
 }
 
-static PwResult map_deepcopy(PwValuePtr self)
+[[nodiscard]] static bool map_deepcopy(PwValuePtr self, PwValuePtr result)
 {
-    PwValue dest = PwMap();
-    pw_return_if_error(&dest);
-
+    if (!pw_create(self->type_id, result)) {
+        return false;
+    }
     _PwMap* src_map = get_data_ptr(self);
-    unsigned map_length    = get_map_length(src_map);
+    unsigned map_length = get_map_length(src_map);
 
-    pw_expect_ok( _pw_map_expand(dest.type_id, get_data_ptr(&dest), map_length, 0) );
-
+    // XXX use capacity parameter in constructor
+    if (!_pw_map_expand(self->type_id, get_data_ptr(result), map_length, 0)) {
+        return false;
+    }
     PwValuePtr kv = &src_map->kv_pairs.items[0];
+    PwValue key = PW_NULL;
+    PwValue value = PW_NULL;
     for (unsigned i = 0; i < map_length; i++) {{
-        PwValue key = pw_clone(kv++);  // okay to clone because keys are already deeply copied
-        PwValue value = pw_clone(kv++);
-        pw_expect_ok( update_map(&dest, &key, &value) );  // error should not happen because the map already resized
+        pw_clone2(kv++, &key);  // okay to clone because keys are already deeply copied
+        pw_clone2(kv++, &value);
+        if (!update_map(result, &key, &value)) {  // error should not happen because the map already resized
+            return false;
+        }
     }}
-    return pw_move(&dest);
+    return true;
 }
 
 static void map_dump(PwValuePtr self, FILE* fp, int first_indent, int next_indent, _PwCompoundChain* tail)
@@ -445,27 +458,28 @@ static void map_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inden
     }
 }
 
-static PwResult map_to_string(PwValuePtr self)
+[[nodiscard]] static bool map_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool map_is_true(PwValuePtr self)
+[[nodiscard]] static bool map_is_true(PwValuePtr self)
 {
     return get_map_length(get_data_ptr(self));
 }
 
-static inline bool map_eq(_PwMap* a, _PwMap* b)
+[[nodiscard]] static inline bool map_eq(_PwMap* a, _PwMap* b)
 {
     return _pw_array_eq(&a->kv_pairs, &b->kv_pairs);
 }
 
-static bool map_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool map_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return map_eq(get_data_ptr(self), get_data_ptr(other));
 }
 
-static bool map_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool map_equal(PwValuePtr self, PwValuePtr other)
 {
     PwTypeId t = other->type_id;
     for (;;) {
@@ -524,39 +538,38 @@ static_assert((sizeof(_PwCompoundData) & (alignof(_PwMap) - 1)) == 0);
  * map functions
  */
 
-PwResult pw_map_update(PwValuePtr map, PwValuePtr key, PwValuePtr value)
+[[nodiscard]] bool pw_map_update(PwValuePtr map, PwValuePtr key, PwValuePtr value)
 {
     pw_assert_map(map);
 
-    PwValue map_key = PwNull();
-    map_key = pw_deepcopy(key);  // deep copy key for immutability
-    pw_return_if_error(&map_key);
+    PwValue map_key = PW_NULL;
+    if (!pw_deepcopy(key, &map_key)) {  // deep copy key for immutability
+        return false;
+    }
     PwValue map_value = pw_clone(value);
     return update_map(map, &map_key, &map_value);
 }
 
-PwResult _pw_map_update_va(PwValuePtr map, ...)
+[[nodiscard]] bool _pw_map_update_va(PwValuePtr map, ...)
 {
     va_list ap;
     va_start(ap);
-    PwValue result = pw_map_update_ap(map, ap);
+    bool ret = pw_map_update_ap(map, ap);
     va_end(ap);
-    return pw_move(&result);
+    return ret;
 }
 
-PwResult pw_map_update_ap(PwValuePtr map, va_list ap)
+[[nodiscard]] bool pw_map_update_ap(PwValuePtr map, va_list ap)
 {
     pw_assert_map(map);
-    PwValue error = PwOOM();  // default error is OOM unless some arg is a status
     bool done = false;  // for special case when value is missing
     while (!done) {{
         PwValue key = va_arg(ap, _PwValue);
         if (pw_is_status(&key)) {
-            if (pw_va_end(&key)) {
-                return PwOK();
+            if (pw_is_va_end(&key)) {
+                return true;
             }
-            pw_destroy(&error);
-            error = pw_move(&key);
+            pw_set_status(pw_clone(&key));
             goto failure;
         }
         if (!pw_charptr_to_string_inplace(&key)) {
@@ -564,23 +577,19 @@ PwResult pw_map_update_ap(PwValuePtr map, va_list ap)
         }
         PwValue value = va_arg(ap, _PwValue);
         if (pw_is_status(&value)) {
-            if (pw_va_end(&value)) {
+            if (pw_is_va_end(&value)) {
                 pw_destroy(&value);
                 value = PwNull();
                 done = true;
             } else {
-                pw_destroy(&error);
-                error = pw_move(&value);
+                pw_set_status(pw_clone(&value));
                 goto failure;
             }
         }
         if (!pw_charptr_to_string_inplace(&value)) {
             goto failure;
         }
-        PwValue status = update_map(map, &key, &value);
-        if (pw_error(&status)) {
-            pw_destroy(&error);
-            error = pw_move(&status);
+        if (!update_map(map, &key, &value)) {
             goto failure;
         }
     }}
@@ -590,17 +599,17 @@ failure:
     if (!done) {
         _pw_destroy_args(ap);
     }
-    return pw_move(&error);
+    return false;
 }
 
-bool _pw_map_has_key(PwValuePtr self, PwValuePtr key)
+[[nodiscard]] bool _pw_map_has_key(PwValuePtr self, PwValuePtr key)
 {
     pw_assert_map(self);
     _PwMap* map = get_data_ptr(self);
     return lookup(map, key, nullptr, nullptr) != UINT_MAX;
 }
 
-PwResult _pw_map_get(PwValuePtr self, PwValuePtr key)
+[[nodiscard]] bool _pw_map_get(PwValuePtr self, PwValuePtr key, PwValuePtr result)
 {
     pw_assert_map(self);
     _PwMap* map = get_data_ptr(self);
@@ -610,15 +619,16 @@ PwResult _pw_map_get(PwValuePtr self, PwValuePtr key)
 
     if (key_index == UINT_MAX) {
         // key not found
-        return PwError(PW_ERROR_KEY_NOT_FOUND);
+        pw_set_status(PwStatus(PW_ERROR_KEY_NOT_FOUND));
+        return false;
     }
-
     // return value
     unsigned value_index = key_index + 1;
-    return pw_clone(&map->kv_pairs.items[value_index]);
+    pw_clone2(&map->kv_pairs.items[value_index], result);
+    return true;
 }
 
-bool _pw_map_del(PwValuePtr self, PwValuePtr key)
+[[nodiscard]] bool _pw_map_del(PwValuePtr self, PwValuePtr key)
 {
     pw_assert_map(self);
 
@@ -630,6 +640,7 @@ bool _pw_map_del(PwValuePtr self, PwValuePtr key)
     unsigned key_index = lookup(map, key, &ht_index, nullptr);
     if (key_index == UINT_MAX) {
         // key not found
+        pw_set_status(PwStatus(PW_ERROR_KEY_NOT_FOUND));
         return false;
     }
 
@@ -640,7 +651,7 @@ bool _pw_map_del(PwValuePtr self, PwValuePtr key)
     ht->items_used--;
 
     // delete key-value pair
-    _pw_array_del(&map->kv_pairs, key_index, key_index + 2);
+    _pw_array_del(&map->kv_pairs, key_index, key_index + 2, self);
 
     if (key_index + 2 < _pw_array_length(&map->kv_pairs)) {
         // key-value was not the last pair in the array,
@@ -663,7 +674,7 @@ unsigned pw_map_length(PwValuePtr self)
     return get_map_length(get_data_ptr(self));
 }
 
-bool pw_map_item(PwValuePtr self, unsigned index, PwValuePtr key, PwValuePtr value)
+[[nodiscard]] bool pw_map_item(PwValuePtr self, unsigned index, PwValuePtr key, PwValuePtr value)
 {
     pw_assert_map(self);
 
@@ -672,12 +683,9 @@ bool pw_map_item(PwValuePtr self, unsigned index, PwValuePtr key, PwValuePtr val
     index <<= 1;
 
     if (index < _pw_array_length(&map->kv_pairs)) {
-        pw_destroy(key);
-        pw_destroy(value);
-        *key   = pw_clone(&map->kv_pairs.items[index]);
-        *value = pw_clone(&map->kv_pairs.items[index + 1]);
+        pw_clone2(&map->kv_pairs.items[index], key);
+        pw_clone2(&map->kv_pairs.items[index + 1], value);
         return true;
-
     } else {
         return false;
     }
@@ -687,19 +695,9 @@ bool pw_map_item(PwValuePtr self, unsigned index, PwValuePtr key, PwValuePtr val
  * RandomAccess interface
  */
 
-static PwResult ra_delete_item(PwValuePtr self, PwValuePtr key)
-// XXX: change return type of _pw_map_del instead?
-{
-    if (_pw_map_del(self, key)) {
-        return PwOK();
-    } else {
-        return PwError(PW_ERROR_KEY_NOT_FOUND);
-    }
-}
-
 static PwInterface_RandomAccess random_access_interface = {
     .length      = pw_map_length,
     .get_item    = _pw_map_get,
     .set_item    = pw_map_update,
-    .delete_item = ra_delete_item  // _pw_map_del
+    .delete_item = _pw_map_del
 };

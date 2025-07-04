@@ -1,4 +1,5 @@
 #include "include/pw.h"
+#include "src/pw_charptr_internal.h"
 #include "src/pw_interfaces_internal.h"
 #include "src/pw_string_internal.h"
 #include "src/pw_struct_internal.h"
@@ -14,30 +15,30 @@ typedef struct {
 #define get_data_ptr(value)  ((_PwStringIO*) _pw_get_data_ptr((value), PwTypeId_StringIO))
 
 // forward declaration
-static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line);
+[[nodiscard]] static bool read_line_inplace(PwValuePtr self, PwValuePtr line);
 
 /****************************************************************
  * Constructors
  */
 
-PwResult _pw_create_string_io_u8(char8_t* str)
+[[nodiscard]] bool _pw_create_string_io_u8(char8_t* str, PwValuePtr result)
 {
-    __PWDECL_CharPtr(v, str);
+    _PwValue v = PW_CHARPTR(str);
     PwStringIOCtorArgs args = { .string = &v };
-    return pw_create2(PwTypeId_StringIO, &args);
+    return pw_create2(PwTypeId_StringIO, &args, result);
 }
 
-PwResult _pw_create_string_io_u32(char32_t* str)
+[[nodiscard]] bool _pw_create_string_io_u32(char32_t* str, PwValuePtr result)
 {
-    __PWDECL_Char32Ptr(v, str);
+    _PwValue v = PW_CHAR32PTR(str);
     PwStringIOCtorArgs args = { .string = &v };
-    return pw_create2(PwTypeId_StringIO, &args);
+    return pw_create2(PwTypeId_StringIO, &args, result);
 }
 
-PwResult _pw_create_string_io(PwValuePtr str)
+[[nodiscard]] bool _pw_create_string_io(PwValuePtr str, PwValuePtr result)
 {
     PwStringIOCtorArgs args = { .string = str };
-    return pw_create2(PwTypeId_StringIO, &args);
+    return pw_create2(PwTypeId_StringIO, &args, result);
 }
 
 /****************************************************************
@@ -48,23 +49,30 @@ PwTypeId PwTypeId_StringIO = 0;
 
 static PwType stringio_type;
 
-static PwResult stringio_init(PwValuePtr self, void* ctor_args)
+[[nodiscard]] static bool stringio_init(PwValuePtr self, void* ctor_args)
 {
     PwStringIOCtorArgs* args = ctor_args;
 
-    PwValue str = PwNull();
+    PwValue str = PW_NULL;
     if (args) {
-        str = pw_clone(args->string);  // this converts CharPtr to string
+        if (pw_is_charptr(args->string)) {
+            if (!pw_charptr_to_string(args->string, &str)) {
+                return false;
+            }
+        } else {
+            pw_clone2(args->string, &str);
+        }
     } else {
-        str = PwString();
+        str = PwString(0, {});
     }
     if (!pw_is_string(&str)) {
-        return PwError(PW_ERROR_INCOMPATIBLE_TYPE);
+        pw_set_status(PwStatus(PW_ERROR_INCOMPATIBLE_TYPE));
+        return false;
     }
     _PwStringIO* sio = get_data_ptr(self);
-    sio->line = pw_move(&str);
+    pw_move(&str, &sio->line);
     sio->pushback = PwNull();
-    return PwOK();
+    return true;
 }
 
 static void stringio_fini(PwValuePtr self)
@@ -107,19 +115,20 @@ static void stringio_dump(PwValuePtr self, FILE* fp, int first_indent, int next_
     }
 }
 
-static PwResult stringio_to_string(PwValuePtr self)
+[[nodiscard]] static bool stringio_to_string(PwValuePtr self, PwValuePtr result)
 {
     _PwStringIO* sio = get_data_ptr(self);
-    return pw_clone(&sio->line);
+    pw_clone2(&sio->line, result);
+    return true;
 }
 
-static bool stringio_is_true(PwValuePtr self)
+[[nodiscard]] static bool stringio_is_true(PwValuePtr self)
 {
     _PwStringIO* sio = get_data_ptr(self);
     return pw_is_true(&sio->line);
 }
 
-static bool stringio_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool stringio_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     _PwStringIO* sio_self  = get_data_ptr(self);
     _PwStringIO* sio_other = get_data_ptr(other);
@@ -128,7 +137,7 @@ static bool stringio_equal_sametype(PwValuePtr self, PwValuePtr other)
     return fn_cmp(&sio_self->line, &sio_other->line);
 }
 
-static bool stringio_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool stringio_equal(PwValuePtr self, PwValuePtr other)
 {
     _PwStringIO* sio_self  = get_data_ptr(self);
 
@@ -140,55 +149,60 @@ static bool stringio_equal(PwValuePtr self, PwValuePtr other)
  * LineReader interface
  */
 
-static PwResult start_read_lines(PwValuePtr self)
+[[nodiscard]] static bool start_read_lines(PwValuePtr self)
 {
     _PwStringIO* sio = get_data_ptr(self);
     sio->line_position = 0;
     sio->line_number = 0;
     pw_destroy(&sio->pushback);
-    return PwOK();
+    return true;
 }
 
-static PwResult read_line(PwValuePtr self)
+[[nodiscard]] static bool read_line(PwValuePtr self, PwValuePtr result)
 {
-    PwValue result = PwString();
-    pw_expect_ok( read_line_inplace(self, &result) );
-    return pw_move(&result);
+    pw_destroy(result);
+    *result = PwString(0, {});
+    return read_line_inplace(self, result);
 }
 
-static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
+[[nodiscard]] static bool read_line_inplace(PwValuePtr self, PwValuePtr line)
 {
     _PwStringIO* sio = get_data_ptr(self);
 
-    pw_string_truncate(line, 0);
-
+    if (!pw_string_truncate(line, 0)) {
+        return false;
+    }
     if (pw_is_string(&sio->pushback)) {
-        pw_expect_true( pw_string_append(line, &sio->pushback) );
+        if (!pw_string_append(line, &sio->pushback)) {
+            return false;
+        }
         pw_destroy(&sio->pushback);
         sio->line_number++;
-        return PwOK();
+        return true;
     }
-
     if (!pw_string_index_valid(&sio->line, sio->line_position)) {
-        return PwError(PW_ERROR_EOF);
+        pw_set_status(PwStatus(PW_ERROR_EOF));
+        return false;
     }
 
     unsigned lf_pos;
     if (!pw_strchr(&sio->line, '\n', sio->line_position, &lf_pos)) {
         lf_pos = pw_strlen(&sio->line) - 1;
     }
-    pw_string_append_substring(line, &sio->line, sio->line_position, lf_pos + 1);
+    if (!pw_string_append_substring(line, &sio->line, sio->line_position, lf_pos + 1)) {
+        return false;
+    }
     sio->line_position = lf_pos + 1;
     sio->line_number++;
-    return PwOK();
+    return true;
 }
 
-static bool unread_line(PwValuePtr self, PwValuePtr line)
+[[nodiscard]] static bool unread_line(PwValuePtr self, PwValuePtr line)
 {
     _PwStringIO* sio = get_data_ptr(self);
 
     if (pw_is_null(&sio->pushback)) {
-        sio->pushback = pw_clone(line);
+        __pw_clone(line, &sio->pushback);  // puchback is already Null, so use __pw_clone here
         sio->line_number--;
         return true;
     } else {

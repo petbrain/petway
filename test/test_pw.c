@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "include/pw.h"
@@ -27,6 +28,13 @@ bool print_ok = false;
         num_tests++;  \
     } while (false)
 
+#define panic()  \
+    do {  \
+        fprintf(stderr, "PANIC: %s:%d\n", __FILE__, __LINE__);  \
+        pw_print_status(stderr, &current_task->status);  \
+        abort();  \
+    } while (false)
+
 void test_icu()
 {
 #   ifdef PW_WITH_ICU
@@ -48,10 +56,8 @@ void test_integral_types()
     TEST(strcmp(pw_get_type_name((unsigned long long) PwTypeId_Float), "Float") == 0);
 
     // Null values
-    PwValue null_1 = PwNull();
-    PWDECL_Null(null_2);
+    PwValue null_1 = PW_NULL;
     TEST(pw_is_null(&null_1));
-    TEST(pw_is_null(&null_2));
 
     TEST(strcmp(pw_get_type_name(&null_1), "Null") == 0);  // generics test
 
@@ -105,7 +111,6 @@ void test_integral_types()
     TEST(pw_equal(&f_3, 3.0f));
 
     // null vs null
-    TEST(pw_equal(&null_1, &null_2));
     TEST(pw_equal(&null_1, nullptr));
 
     // null vs bool
@@ -371,22 +376,29 @@ void test_integral_types()
 
 void test_string()
 {
+    // zero is not space
     TEST(pw_isspace(0) == false);
 
     { // testing char_size=1
-        PwValue v = pw_create_empty_string(0, 1);
+        PwValue v = PW_NULL;
+        if (!pw_create_empty_string(0, 1, &v)) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 0);
         TEST(_pw_string_capacity(&v) == 12);
         TEST(_pw_string_char_size(&v) == 1);
         //pw_dump(stderr, &v);
 
-        pw_string_append(&v, "hello");
-
+        if (!pw_string_append(&v, "hello")) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 5);
         TEST(_pw_string_capacity(&v) == 12);
         //pw_dump(stderr, &v);
 
-        pw_string_append(&v, '!');
+        if (!pw_string_append(&v, '!')) {
+            panic();
+        }
 
         TEST(_pw_string_length(&v) == 6);
         TEST(_pw_string_capacity(&v) == 12);
@@ -394,20 +406,29 @@ void test_string()
 
         // XXX TODO increase capacity to more than 64K
         for (int i = 0; i < 250; i++) {
-            pw_string_append(&v, ' ');
+            if (!pw_string_append(&v, ' ')) {
+                panic();
+            }
         }
         TEST(_pw_string_length(&v) == 256);
         TEST(_pw_string_char_size(&v) == 1);
         //pw_dump(stderr, &v);
 
-        pw_string_append(&v, "pet");
-        pw_string_erase(&v, 5, 255);
+        if (!pw_string_append(&v, "pet")) {
+            panic();
+        }
+        if (!pw_string_erase(&v, 5, 255)) {
+            panic();
+        }
         TEST(pw_equal(&v, "hello pet"));
         //pw_dump(stderr, &v);
         TEST(!pw_equal(&v, ""));
 
         // test comparison
-        PwValue v2 = pw_create_string("hello pet");
+        PwValue v2 = PW_NULL;
+        if (!pw_create_string("hello pet", &v2)) {
+            panic();
+        }
         TEST(pw_equal(&v, &v2));
         TEST(pw_equal(&v2, "hello pet"));
         TEST(!pw_equal(&v, "hello Pet"));
@@ -421,7 +442,10 @@ void test_string()
         TEST(!pw_equal(&v, U"hello Pet"));
         TEST(!pw_equal(&v2, U"hello Pet"));
 
-        PwValue v3 = pw_create_string("hello pet");
+        PwValue v3 = PW_NULL;
+        if (!pw_create_string("hello pet", &v3)) {
+            panic();
+        }
         // test C string
         PW_CSTRING_LOCAL(cv3, &v3);
         TEST(strcmp(cv3, "hello pet") == 0);
@@ -441,13 +465,19 @@ void test_string()
         TEST(pw_substring_eq(&v, 7, 100, U"et"));
 
         // test erase and truncate
-        pw_string_erase(&v, 4, 255);
+        if (!pw_string_erase(&v, 4, 255)) {
+            panic();
+        }
         TEST(pw_equal(&v, "hell"));
 
-        pw_string_erase(&v, 0, 2);
+        if (!pw_string_erase(&v, 0, 2)) {
+            panic();
+        }
         TEST(pw_equal(&v, "ll"));
 
-        pw_string_truncate(&v, 0);
+        if (!pw_string_truncate(&v, 0)) {
+            panic();
+        }
         TEST(pw_equal(&v, ""));
 
         TEST(_pw_string_length(&v) == 0);
@@ -455,17 +485,26 @@ void test_string()
         //pw_dump(stderr, &v);
 
         // test append substring
-        pw_string_append_substring(&v, "0123456789", 3, 7);
+        if (!pw_string_append_substring(&v, "0123456789", 3, 7)) {
+            panic();
+        }
         TEST(pw_equal(&v, "3456"));
-        pw_string_append_substring(&v, u8"0123456789", 3, 7);
+        if (!pw_string_append_substring(&v, u8"0123456789", 3, 7)) {
+            panic();
+        }
         TEST(pw_equal(&v, "34563456"));
-        pw_string_append_substring(&v, U"0123456789", 3, 7);
+        if (!pw_string_append_substring(&v, U"0123456789", 3, 7)) {
+            panic();
+        }
         TEST(pw_equal(&v, "345634563456"));
-        pw_string_truncate(&v, 0);
+        if (!pw_string_truncate(&v, 0)) {
+            panic();
+        }
 
         // change char size to 2-byte by appending wider chars -- the string will be copied
-        pw_string_append(&v, u8"สวัสดี");
-
+        if (!pw_string_append(&v, u8"สวัสดี")) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 6);
         TEST(_pw_string_capacity(&v) == 268);  // capacity is slightly changed because of alignment and char_size increase
         TEST(_pw_string_char_size(&v) == 2);
@@ -474,48 +513,66 @@ void test_string()
     }
 
     { // testing char_size=2
-        PwValue v = pw_create_empty_string(1, 2);
+        PwValue v = PW_NULL;
+        if (!pw_create_empty_string(1, 2, &v)) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 0);
         TEST(_pw_string_capacity(&v) == 6);
         TEST(_pw_string_char_size(&v) == 2);
         //pw_dump(stderr, &v);
 
-        pw_string_append(&v, u8"สบาย");
-
+        if (!pw_string_append(&v, u8"สบาย")) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 4);
         TEST(_pw_string_capacity(&v) == 6);
         //pw_dump(stderr, &v);
 
-        pw_string_append(&v, 0x0e14);
-        pw_string_append(&v, 0x0e35);
-
+        if (!pw_string_append(&v, 0x0e14)) {
+            panic();
+        }
+        if (!pw_string_append(&v, 0x0e35)) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 6);
         TEST(_pw_string_capacity(&v) == 6);
         TEST(pw_equal(&v, u8"สบายดี"));
         //pw_dump(stderr, &v);
 
         // test truncate
-        pw_string_truncate(&v, 4);
+        if (!pw_string_truncate(&v, 4)) {
+            panic();
+        }
         TEST(pw_equal(&v, u8"สบาย"));
         TEST(!pw_equal(&v, ""));
         //pw_dump(stderr, &v);
 
         // increase capacity to 2 bytes
         for (int i = 0; i < 251; i++) {
-            pw_string_append(&v, ' ');
+            if (!pw_string_append(&v, ' ')) {
+                panic();
+            }
         }
         TEST(_pw_string_length(&v) == 255);
         TEST(_pw_string_capacity(&v) == 260);
         TEST(_pw_string_char_size(&v) == 2);
         //pw_dump(stderr, &v);
 
-        pw_string_append(&v, U"สบาย");
-        pw_string_erase(&v, 4, 255);
+        if (!pw_string_append(&v, U"สบาย")) {
+            panic();
+        }
+        if (!pw_string_erase(&v, 4, 255)) {
+            panic();
+        }
         TEST(pw_equal(&v, u8"สบายสบาย"));
         TEST(!pw_equal(&v, ""));
 
         // test comparison
-        PwValue v2 = pw_create_string(u8"สบายสบาย");
+        PwValue v2 = PW_NULL;
+        if (!pw_create_string(u8"สบายสบาย", &v2)) {
+            panic();
+        }
         TEST(pw_equal(&v, &v2));
         TEST(pw_equal(&v, u8"สบายสบาย"));
         TEST(pw_equal(&v2, u8"สบายสบาย"));
@@ -537,29 +594,43 @@ void test_string()
         TEST(pw_substring_eq(&v, 6, 100, U"าย"));
 
         // test erase and truncate
-        pw_string_erase(&v, 4, 255);
+        if (!pw_string_erase(&v, 4, 255)) {
+            panic();
+        }
         TEST(pw_equal(&v, u8"สบาย"));
 
-        pw_string_erase(&v2, 0, 4);
+        if (!pw_string_erase(&v2, 0, 4)) {
+            panic();
+        }
         TEST(pw_equal(&v, u8"สบาย"));
 
-        pw_string_truncate(&v, 0);
+        if (!pw_string_truncate(&v, 0)) {
+            panic();
+        }
         TEST(pw_equal(&v, ""));
 
         // test append substring
-        pw_string_append_substring(&v, u8"สบายสบาย", 1, 4);
+        if (!pw_string_append_substring(&v, u8"สบายสบาย", 1, 4)) {
+            panic();
+        }
         TEST(pw_equal(&v, u8"บาย"));
-        pw_string_append_substring(&v, U"สบายสบาย", 1, 4);
+        if (!pw_string_append_substring(&v, U"สบายสบาย", 1, 4)) {
+            panic();
+        }
         TEST(pw_equal(&v, U"บายบาย"));
-        pw_string_truncate(&v, 0);
-
+        if (!pw_string_truncate(&v, 0)) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 0);
         TEST(_pw_string_capacity(&v) == 260);
         //pw_dump(stderr, &v);
     }
 
     { // testing char_size=3
-        PwValue v = pw_create_empty_string(1, 3);
+        PwValue v = PW_NULL;
+        if (!pw_create_empty_string(1, 3, &v)) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 0);
         TEST(_pw_string_capacity(&v) == 4);
         TEST(_pw_string_char_size(&v) == 3);
@@ -567,7 +638,10 @@ void test_string()
     }
 
     { // testing char_size=4
-        PwValue v = pw_create_empty_string(1, 4);
+        PwValue v = PW_NULL;
+        if (!pw_create_empty_string(1, 4, &v)) {
+            panic();
+        }
         TEST(_pw_string_length(&v) == 0);
         TEST(_pw_string_capacity(&v) == 3);
         TEST(_pw_string_char_size(&v) == 4);
@@ -575,50 +649,76 @@ void test_string()
     }
 
     { // test trimming
-        PwValue v = pw_create_string(u8"  สวัสดี   ");
+        PwValue v = PW_NULL;
+        if (!pw_create_string(u8"  สวัสดี   ", &v)) {
+            panic();
+        }
         TEST(pw_strlen(&v) == 11);
-        pw_string_ltrim(&v);
+        if (!pw_string_ltrim(&v)) {
+            panic();
+        }
         TEST(pw_equal(&v, u8"สวัสดี   "));
-        pw_string_rtrim(&v);
+        if (!pw_string_rtrim(&v)) {
+            panic();
+        }
         TEST(pw_equal(&v, u8"สวัสดี"));
         TEST(pw_strlen(&v) == 6);
     }
 
     { // test pw_strcat (by value)
-        PwValue v = pw_strcat(
-            pw_create_string("Hello! "), PwCharPtr("Thanks"), PwChar32Ptr(U"🙏"), PwCharPtr(u8"สวัสดี")
-        );
-        TEST(pw_equal(&v, U"Hello! Thanks🙏สวัสดี"));
-        //pw_dump(stderr, &v);
-    }
-
-    { // test pw_strcat (by reference)
-        PwValue s1 = pw_create_string("Hello! ");
-        PwValue s2 = PwCharPtr("Thanks");
-        PwValue s3 = PwChar32Ptr(U"🙏");
-        PwValue s4 = PwCharPtr(u8"สวัสดี");
-        PwValue v = pw_strcat(&s1, &s2, &s3, &s4);
+        PwValue v = PW_NULL;
+        if (!pw_strcat(&v, pwva(_pw_create_string_ascii, "Hello! "), PwCharPtr("Thanks"),
+                       PwChar32Ptr(U"🙏"), PwCharPtr(u8"สวัสดี"))) {
+            panic();
+        }
         TEST(pw_equal(&v, U"Hello! Thanks🙏สวัสดี"));
         //pw_dump(stderr, &v);
     }
 
     { // test split/join
-        PwValue str = pw_create_string(U"สบาย/สบาย/yo/yo");
-        PwValue array = pw_string_split_chr(&str, '/', 0);
+        PwValue str = PW_NULL;
+        if (!pw_create_string(U"สบาย/สบาย/yo/yo", &str)) {
+            panic();
+        }
+        PwValue array = PW_NULL;
+        if (!pw_string_split_chr(&str, '/', 0, &array)) {
+            panic();
+        }
         //pw_dump(stderr, &array);
-        PwValue array2 = pw_string_rsplit_chr(&str, '/', 1);
+        PwValue array2 = PW_NULL;
+        if (!pw_string_rsplit_chr(&str, '/', 1, &array2)) {
+            panic();
+        }
         //pw_dump(stderr, &array2);
-        PwValue first = pw_array_item(&array2, 0);
-        PwValue last = pw_array_item(&array2, 1);
+        PwValue first = PW_NULL;
+        if (!pw_array_item(&array2, 0, &first)) {
+            panic();
+        }
+        PwValue last = PW_NULL;
+        if (!pw_array_item(&array2, 1, &last)) {
+            panic();
+        }
         TEST(pw_equal(&first, U"สบาย/สบาย/yo"));
         TEST(pw_equal(&last, "yo"));
-        PwValue array3 = pw_string_split_chr(&str, '/', 1);
+        PwValue array3 = PW_NULL;
+        if (!pw_string_split_chr(&str, '/', 1, &array3)) {
+            panic();
+        }
         //pw_dump(stderr, &array3);
-        PwValue first3 = pw_array_item(&array3, 0);
-        PwValue last3 = pw_array_item(&array3, 1);
+        PwValue first3 = PW_NULL;
+        if (!pw_array_item(&array3, 0, &first3)) {
+            panic();
+        }
+        PwValue last3 = PW_NULL;
+        if (!pw_array_item(&array3, 1, &last3)) {
+            panic();
+        }
         TEST(pw_equal(&first3, U"สบาย"));
         TEST(pw_equal(&last3, U"สบาย/yo/yo"));
-        PwValue v = pw_array_join('/', &array);
+        PwValue v = PW_NULL;
+        if (!pw_array_join('/', &array, &v)) {
+            panic();
+        }
         TEST(pw_equal(&v, U"สบาย/สบาย/yo/yo"));
     }
 
@@ -627,16 +727,21 @@ void test_string()
         char8_t data[2500];
         memset(data, '1', sizeof(data));
 
-        PWDECL_String(str);
+        PwValue str = PW_STRING(0, {});
 
-        pw_string_append_buffer(&str, data, sizeof(data));
+        if (!pw_string_append_buffer(&str, data, sizeof(data))) {
+            panic();
+        }
         TEST(_pw_string_capacity(&str) >= _pw_string_length(&str));
         TEST(_pw_string_length(&str) == 2500);
         //pw_dump(stderr, &str);
     }
 
     { // test startswith/endswith
-        PwValue str = pw_create_string("hello world");
+        PwValue str = PW_NULL;
+        if (!pw_create_string("hello world", &str)) {
+            panic();
+        }
         TEST(pw_startswith(&str, 'h'));
         TEST(!pw_startswith(&str, U'ค'));
         TEST(pw_startswith(&str, "hello"));
@@ -647,7 +752,10 @@ void test_string()
         TEST(!pw_endswith(&str, "hello"));
     }
     {
-        PwValue str = pw_create_string(u8"ความคืบหน้า");
+        PwValue str = PW_NULL;
+        if (!pw_create_string(u8"ความคืบหน้า", &str)) {
+            panic();
+        }
         TEST(!pw_startswith(&str, 'h'));
         TEST(pw_startswith(&str, U'ค'));
         TEST(pw_startswith(&str, u8"ความ"));
@@ -661,20 +769,32 @@ void test_string()
     }
 
     { // test isdigit, is_ascii_digit
-        PwValue empty = PwString();
-        PwValue nondigit = pw_create_string(u8"123รูปโป๊");
-        PwValue digit = pw_create_string("456");
+        PwValue empty = PwString(0, {});
+        PwValue nondigit = PW_NULL;
+        if (!pw_create_string(u8"123รูปโป๊", &nondigit)) {
+            panic();
+        }
+        PwValue digit = PW_NULL;
+        if (!pw_create_string("456", &digit)) {
+            panic();
+        }
         TEST(!pw_string_is_ascii_digit(&empty));
         TEST(!pw_string_is_ascii_digit(&nondigit));
         TEST(pw_string_is_ascii_digit(&digit));
 
-        PwValue th_digit = pw_create_string(u8"๑๒๓๔๕");
+        PwValue th_digit = PW_NULL;
+        if (!pw_create_string(u8"๑๒๓๔๕", &th_digit)) {
+            panic();
+        }
         TEST(pw_string_isdigit(&th_digit));
 
         // fail:
         // TEST(pw_isdigit(U'零'));
         // TEST(pw_isdigit(U'〇'));
-        //PwValue zh_digit = pw_create_string(u8"一二三四五");
+        //PwValue zh_digit = PW_NULL;
+        //if (!pw_create_string(u8"一二三四五", &zh_digit)) {
+        //    panic();
+        //}
         //TEST(pw_string_isdigit(&zh_digit));
     }
     { // test isalnum
@@ -739,28 +859,36 @@ void test_string()
 
 void test_array()
 {
-    PwValue array = PwArray();
+    PwValue array = PW_NULL;
+    if (!pw_create_array(&array)) {
+        panic();
+    }
 
     TEST(pw_array_length(&array) == 0);
 
     for(unsigned i = 0; i < 1000; i++) {
         {
             PwValue item = PwUnsigned(i);
-            pw_array_append(&array, &item);
+            if (!pw_array_append(&array, &item)) {
+                panic();
+            }
         }
-
         TEST(pw_array_length(&array) == i + 1);
-
         {
-            PwValue v = pw_array_item(&array, i);
-            PwValue item = PwUnsigned(i);
+            PwValue v = PW_NULL;
+            if (!pw_array_item(&array, i, &v)) {
+                panic();
+            }
+            PwValue item = PW_UNSIGNED(i);
             TEST(pw_equal(&v, &item));
         }
     }
-
     {
-        PwValue item = pw_array_item(&array, -2);
-        PwValue v = PwUnsigned(998);
+        PwValue item = PW_NULL;
+        if (!pw_array_item(&array, -2, &item)) {
+            panic();
+        }
+        PwValue v = PW_UNSIGNED(998);
         TEST(pw_equal(&v, &item));
     }
 
@@ -768,70 +896,123 @@ void test_array()
     TEST(pw_array_length(&array) == 900);
 
     {
-        PwValue item = pw_array_item(&array, 99);
-        PwValue v = PwUnsigned(99);
+        PwValue item = PW_NULL;
+        if (!pw_array_item(&array, 99, &item)) {
+            panic();
+        }
+        PwValue v = PW_UNSIGNED(99);
         TEST(pw_equal(&v, &item));
     }
     {
-        PwValue item = pw_array_item(&array, 100);
+        PwValue item = PW_NULL;
+        if (!pw_array_item(&array, 100, &item)) {
+            panic();
+        }
         PwValue v = PwUnsigned(200);
         TEST(pw_equal(&v, &item));
     }
-
     {
-        PwValue slice = pw_array_slice(&array, 750, 850);
+        PwValue slice = PW_NULL;
+        if (!pw_array_slice(&array, 750, 850, &slice)) {
+            panic();
+        }
         TEST(pw_array_length(&slice) == 100);
         {
-            PwValue item = pw_array_item(&slice, 1);
+            PwValue item = PW_NULL;
+            if (!pw_array_item(&slice, 1, &item)) {
+                panic();
+            }
             TEST(pw_equal(&item, 851));
         }
         {
-            PwValue item = pw_array_item(&slice, 98);
+            PwValue item = PW_NULL;
+            if (!pw_array_item(&slice, 98, &item)) {
+                panic();
+            }
             TEST(pw_equal(&item, 948));
         }
     }
 
-    PwValue pulled = pw_array_pull(&array);
+    PwValue pulled = PW_NULL;
+    if (!pw_array_pull(&array, &pulled)) {
+        panic();
+    }
     TEST(pw_equal(&pulled, 0));
     TEST(pw_array_length(&array) == 899);
-    pulled = pw_array_pull(&array);
+    if (!pw_array_pull(&array, &pulled)) {
+        panic();
+    }
     TEST(pw_equal(&pulled, 1));
     TEST(pw_array_length(&array) == 898);
 
     { // test join
-        PwValue array = PwArray();
-        pw_array_append(&array, "Hello");
-        pw_array_append(&array, u8"สวัสดี");
-        pw_array_append(&array, "Thanks");
-        pw_array_append(&array, U"mulțumesc");
-        PwValue v = pw_array_join('/', &array);
+        PwValue array = PW_NULL;
+        if (!pw_create_array(&array)) {
+            panic();
+        }
+        if (!pw_array_append(&array, "Hello")) {
+            panic();
+        }
+        if (!pw_array_append(&array, u8"สวัสดี")) {
+            panic();
+        }
+        if (!pw_array_append(&array, "Thanks")) {
+            panic();
+        }
+        if (!pw_array_append(&array, U"mulțumesc")) {
+            panic();
+        }
+        PwValue v = PW_NULL;
+        if (!pw_array_join('/', &array, &v)) {
+            panic();
+        }
         TEST(pw_equal(&v, U"Hello/สวัสดี/Thanks/mulțumesc"));
         //pw_dump(stderr, &v);
     }
-
     { // test join with CharPtr
-        PwValue array       = PwArray();
+        PwValue array = PW_NULL;
+        if (!pw_create_array(&array)) {
+            panic();
+        }
         PwValue sawatdee   = PwCharPtr(u8"สวัสดี");
         PwValue thanks     = PwCharPtr("Thanks");
         PwValue multsumesc = PwChar32Ptr(U"mulțumesc");
         PwValue wat        = PwChar32Ptr(U"🙏");
-        pw_array_append(&array, "Hello");
-        pw_array_append(&array, &sawatdee);
-        pw_array_append(&array, &thanks);
-        pw_array_append(&array, &multsumesc);
-        PwValue v = pw_array_join(&wat, &array);
+        if (!pw_array_append(&array, "Hello")) {
+            panic();
+        }
+        if (!pw_array_append(&array, &sawatdee)) {
+            panic();
+        }
+        if (!pw_array_append(&array, &thanks)) {
+            panic();
+        }
+        if (!pw_array_append(&array, &multsumesc)) {
+            panic();
+        }
+        PwValue v = PW_NULL;
+        if (!pw_array_join(&wat, &array, &v)) {
+            panic();
+        }
         TEST(pw_equal(&v, U"Hello🙏สวัสดี🙏Thanks🙏mulțumesc"));
         //pw_dump(stderr, &v);
     }
-
     { // test dedent
-        PwValue array = PwArray(
-            PwCharPtr("   first line"),
-            PwCharPtr("  second line"),
-            PwCharPtr("    third line")
-        );
-        pw_array_dedent(&array);
-        PwValue v = pw_array_join(',', &array);
+        PwValue array = PW_NULL;
+        if (!pw_array_va(&array,
+                      PwCharPtr("   first line"),
+                      PwCharPtr("  second line"),
+                      PwCharPtr("    third line")
+                     )) {
+            panic();
+        }
+        if (!pw_array_dedent(&array)) {
+            panic();
+        }
+        PwValue v = PW_NULL;
+        if (!pw_array_join(',', &array, &v)) {
+            panic();
+        }
         TEST(pw_equal(&v, " first line,second line,  third line"));
         //pw_dump(stderr, &v);
     }
@@ -840,39 +1021,41 @@ void test_array()
 void test_map()
 {
     {
-        PwValue map = PwMap();
+        PwValue map = PW_NULL;
+        if (!pw_create_map(&map)) {
+            panic();
+        }
         PwValue key = PwUnsigned(0);
         PwValue value = PwBool(false);
 
-        pw_map_update(&map, &key, &value);
+        if (!pw_map_update(&map, &key, &value)) {
+            panic();
+        }
         TEST(pw_map_length(&map) == 1);
-        pw_destroy(&key);
-        pw_destroy(&value);
 
         key = PwUnsigned(0);
         TEST(pw_map_has_key(&map, &key));
-        pw_destroy(&key);
 
         key = PwNull();
         TEST(!pw_map_has_key(&map, &key));
-        pw_destroy(&key);
 
         for (int i = 1; i < 50; i++) {
             key = PwUnsigned(i);
             value = PwUnsigned(i);
-            pw_map_update(&map, &key, &value);
-            pw_destroy(&key);
-            pw_destroy(&value);
+            if (!pw_map_update(&map, &key, &value)) {
+                panic();
+            }
         }
-        pw_map_del(&map, 25);
-
+        if (!pw_map_del(&map, 25)) {
+            panic();
+        }
         TEST(pw_map_length(&map) == 49);
         //pw_dump(stderr, &map);
     }
-
     {
         // XXX CType leftovers
-        PwValue map = PwMap(
+        PwValue map = PW_NULL;
+        if (!pw_map_va(&map,
             PwCharPtr("let's"),       PwCharPtr("go!"),
             PwNull(),                 PwBool(true),
             PwBool(true),             PwCharPtr("true"),
@@ -881,8 +1064,10 @@ void test_map()
             PwUnsigned(100),          PwSigned(-1000000L),
             PwUnsigned(300000000ULL), PwFloat(1.23),
             PwCharPtr(u8"สวัสดี"),      PwChar32Ptr(U"สบาย"),
-            PwCharPtr("finally"),     PwMap(PwCharPtr("ok"), PwCharPtr("done"))
-        );
+            PwCharPtr("finally"),     pwva_map(PwCharPtr("ok"), PwCharPtr("done"))
+        )) {
+            panic();
+        }
         TEST(pw_map_length(&map) == 9);
         //pw_dump(stderr, &map);
     }
@@ -898,48 +1083,61 @@ void test_file()
 
         char8_t data_filename[] = u8"./test/data/utf8-crossing-buffer-boundary";
 
-        PwValue file = pw_file_open(data_filename, O_RDONLY, 0);
-        TEST(pw_ok(&file));
-        PwValue status = pw_start_read_lines(&file);
-        TEST(pw_ok(&status));
-        PwValue line = pw_create_string("");
+        PwValue file = PW_NULL;
+        if (!pw_file_open(data_filename, O_RDONLY, 0, &file)) {
+            panic();
+        }
+        if (!pw_start_read_lines(&file)) {
+            panic();
+        }
+        PwValue line = PW_STRING(0, {});
         for (;;) {{
-            PwValue status = pw_read_line_inplace(&file, &line);
-            TEST(pw_ok(&status));
-            if (pw_error(&status)) {
-                return;
+            if (!pw_read_line_inplace(&file, &line)) {
+                panic();
             }
             if (!pw_equal(&line, a)) {
                 break;
             }
         }}
         TEST(pw_equal(&line, b));
-        {
-            PwValue status = pw_read_line_inplace(&file, &line);
-            TEST(pw_ok(&status));
+        if (!pw_read_line_inplace(&file, &line)) {
+            panic();
         }
         TEST(pw_equal(&line, c));
 
         { // test path functions
-            PwValue s = pw_create_string("/bin/bash");
-            PwValue basename = pw_basename(&s);
+            PwValue s = PW_NULL;
+            if (!pw_create_string("/bin/bash", &s)) {
+                panic();
+            }
+            PwValue basename = PW_NULL;
+            if (!pw_basename(&s, &basename)) {
+                panic();
+            }
             //pw_dump(stderr, &basename);
             TEST(pw_equal(&basename, "bash"));
-            PwValue dirname = pw_dirname(&s);
+            PwValue dirname = PW_NULL;
+            if (!pw_dirname(&s, &dirname)) {
+                panic();
+            }
             //pw_dump(stderr, &dirname);
             TEST(pw_equal(&dirname, "/bin"));
-            PwValue path = pw_path(PwCharPtr(""), PwCharPtr("bin"), PwCharPtr("bash"));
+            PwValue path = PW_NULL;
+            if (!pw_path(&path, PwCharPtr(""), PwCharPtr("bin"), PwCharPtr("bash"))) {
+                panic();
+            }
             TEST(pw_equal(&path, "/bin/bash"));
             //pw_dump(stderr, &path);
-            PwValue part1 = pw_create_string("");
-            PwValue part2 = pw_create_string("bin");
-            PwValue part3 = pw_create_string("bash");
-            PwValue path2 = pw_path(&part1, &part2, &part3);
-            TEST(pw_equal(&path2, "/bin/bash"));
 
-            PwValue s2 = pw_create_string("blahblahblah");
+            PwValue s2 = PW_NULL;
+            if (!pw_create_string("blahblahblah", &s2)) {
+                panic();
+            }
             //pw_dump(stderr, &s2);
-            PwValue basename2 = pw_basename(&s2);
+            PwValue basename2 = PW_NULL;
+            if (!pw_basename(&s2, &basename2)) {
+                panic();
+            }
             //pw_dump(stderr, &basename2);
             TEST(pw_equal(&basename2, "blahblahblah"));
         }
@@ -955,45 +1153,59 @@ void test_file()
 
             PwValue file_name = PwCharPtr(sample_files[i]);
 
-            PwValue file_size = pw_file_size(&file_name);
-            TEST(pw_is_unsigned(&file_size));
-            if (!pw_is_unsigned(&file_size)) {
-                pw_dump(stderr, &file_size);
+            off_t file_size;
+            if (!pw_file_size(&file_name, &file_size)) {
+                panic();
             }
 
             // read content from file
 
-            char data[file_size.unsigned_value + 1];
+            char data[file_size + 1];
             bzero(data, sizeof(data));
 
-            PwValue file = pw_file_open(&file_name, O_RDONLY, 0);
-            TEST(pw_ok(&file));
+            PwValue file = PW_NULL;
+            if (!pw_file_open(&file_name, O_RDONLY, 0, &file)) {
+                panic();
+            }
 
             unsigned bytes_read;
-            PwValue status = pw_read(&file, data, sizeof(data), &bytes_read);
-            TEST(pw_ok(&status));
-            TEST(bytes_read == file_size.unsigned_value);
-            data[file_size.unsigned_value] = 0;
+            if (!pw_read(&file, data, sizeof(data), &bytes_read)) {
+                panic();
+            }
+            TEST(bytes_read == file_size);
+            data[file_size] = 0;
 
             // reopen file
-            pw_destroy(&file);
-            file = pw_file_open(&file_name, O_RDONLY, 0);
-            TEST(pw_ok(&file));
+            if (!pw_file_open(&file_name, O_RDONLY, 0, &file)) {
+                panic();
+            }
 
             // create string IO to compare with
 
-            PwValue str_io = pw_create_string_io(data);
+            PwValue str_io = PW_NULL;
+            if (!pw_create_string_io(data, &str_io)) {
+                panic();
+            }
 
-            status = pw_start_read_lines(&file);
-            TEST(pw_ok(&status));
-            status = pw_start_read_lines(&str_io);
-            TEST(pw_ok(&status));
+            if (!pw_start_read_lines(&file)) {
+                panic();
+            }
+            if (!pw_start_read_lines(&str_io)) {
+                panic();
+            }
 
-            PwValue line_f = pw_create_string("");
-            PwValue line_s = pw_create_string("");
+            PwValue line_f = PW_STRING(0, {});
+            PwValue line_s = PW_STRING(0, {});
+
             for (;;) {{
-                PwValue status_f = pw_read_line_inplace(&file, &line_f);
-                PwValue status_s = pw_read_line_inplace(&str_io, &line_s);
+                PwValue status_f = PW_NULL;
+                if (!pw_read_line_inplace(&file, &line_f)) {
+                    pw_clone2(&current_task->status, &status_f);
+                }
+                PwValue status_s = PW_NULL;
+                if (!pw_read_line_inplace(&str_io, &line_s)) {
+                    pw_clone2(&current_task->status, &status_s);
+                }
                 TEST(pw_equal(&status_f, &status_s));
                 if (!pw_equal(&status_f, &status_s)) {
                     fprintf(stderr, "%s -- Line number: %u (file), %u (string I/O)\n",
@@ -1007,11 +1219,11 @@ void test_file()
                     pw_dump(stderr, &line_s);
                     break;
                 }
-                if (pw_eof(&status_f)) {
+                if (pw_is_eof()) {
                     break;
                 }
-                TEST(pw_ok(&status_f));
-                if (pw_error(&status_f)) {
+                TEST(pw_is_null(&status_f));
+                if (!pw_is_null(&status_f)) {
                     break;
                 }
                 TEST(pw_equal(&line_f, &line_s));
@@ -1034,15 +1246,22 @@ void test_file()
 
 void test_string_io()
 {
-    PwValue sio = pw_create_string_io("one\ntwo\nthree");
+    PwValue sio = PW_NULL;
+    if (!pw_create_string_io("one\ntwo\nthree", &sio)) {
+        panic();
+    }
     {
-        PwValue line = pw_read_line(&sio);
+        PwValue line = PW_NULL;
+        if (!pw_read_line(&sio, &line)) {
+            panic();
+        }
         TEST(pw_equal(&line, "one\n"));
     }
     {
-        PwValue line = PwString();
-        PwValue status = pw_read_line_inplace(&sio, &line);
-        TEST(pw_ok(&status));
+        PwValue line = PW_STRING(0, {});
+        if (!pw_read_line_inplace(&sio, &line)) {
+            panic();
+        }
         TEST(pw_equal(&line, "two\n"));
 
         // push back
@@ -1053,28 +1272,34 @@ void test_string_io()
     }
     {
         // read pushed back
-        PwValue line = pw_create_string("");
-        PwValue status = pw_read_line_inplace(&sio, &line);
-        TEST(pw_ok(&status));
+        PwValue line = PW_STRING(0, {});
+        if (!pw_read_line_inplace(&sio, &line)) {
+            panic();
+        }
         TEST(pw_equal(&line, "two\n"));
     }
     {
-        PWDECL_String(line);
-        PwValue status = pw_read_line_inplace(&sio, &line);
-        TEST(pw_ok(&status));
+        PwValue line = PW_STRING(0, {});
+        if (!pw_read_line_inplace(&sio, &line)) {
+            panic();
+        }
         TEST(pw_equal(&line, "three"));
     }
     {
         // EOF
-        PWDECL_String(line);
-        PwValue status = pw_read_line_inplace(&sio, &line);
-        TEST(pw_error(&status));
+        PwValue line = PW_STRING(0, {});
+        TEST(!pw_read_line_inplace(&sio, &line));
+        TEST(pw_is_eof());
     }
     // start over again
     {
-        PwValue status = pw_start_read_lines(&sio);
-        TEST(pw_ok(&status));
-        PwValue line = pw_read_line(&sio);
+        if (!pw_start_read_lines(&sio)) {
+            panic();
+        }
+        PwValue line = PW_NULL;
+        if (!pw_read_line(&sio, &line)) {
+            panic();
+        }
         TEST(pw_equal(&line, "one\n"));
     }
 }
@@ -1082,106 +1307,179 @@ void test_string_io()
 void test_netutils()
 {
     {
-        PwValue addr = pw_create_string("192.168.0.1:8080");
-        PwValue parsed_addr = pw_parse_inet_address(&addr);
+        PwValue addr = PW_NULL;
+        if (!pw_create_string("192.168.0.1:8080", &addr)) {
+            panic();
+        }
+        PwValue parsed_addr = PW_NULL;
+        if (!pw_parse_inet_address(&addr, &parsed_addr)) {;
+            panic();
+        }
         TEST(pw_sockaddr_ipv4(&parsed_addr) == (192U << 24) + (168U << 16) + 1U);
         TEST(pw_sockaddr_port(&parsed_addr) == 8080);
     }
 /*
     {
-        PwValue addr = pw_create_string("2001:db8:85a3:8d3:1319:8a2e:370:7348");
-        PwValue parsed_addr = pw_parse_inet_address(&addr);
+        PwValue addr = PW_NULL;
+        if (!pw_create_string("2001:db8:85a3:8d3:1319:8a2e:370:7348", &addr)) {
+            panic();
+        }
+        PwValue parsed_addr = PW_NULL;
+        if (!pw_parse_inet_address(&addr, &parsed_addr)) {
+            panic();
+        }
         pw_dump(stderr, &parsed_addr);
         TEST(memcmp(pw_sockaddr_ipv6(&parsed_addr), "\x20\x01\x0d\xb8\x85\xa3\x08\xd3\x13\x19\x8a\x2e\x03\x70\x73\x48", 16));
         TEST(pw_sockaddr_port(&parsed_addr) == 0);
     }
     {
-        PwValue addr = pw_create_string("[2001:db8:85a3:8d3:1319:8a2e:370:7348]:443");
-        PwValue parsed_addr = pw_parse_inet_address(&addr);
+        PwValue addr = PW_NULL;
+        if (!pw_create_string("[2001:db8:85a3:8d3:1319:8a2e:370:7348]:443", &addr)) {
+            panic();
+        }
+        PwValue parsed_addr = PW_NULL;
+        if (!pw_parse_inet_address(&addr, &parsed_addr)) {
+            panic();
+        }
         pw_dump(stderr, &parsed_addr);
         TEST(memcmp(pw_sockaddr_ipv6(&parsed_addr), "\x20\x01\x0d\xb8\x85\xa3\x08\xd3\x13\x19\x8a\x2e\x03\x70\x73\x48", 16));
         TEST(pw_sockaddr_port(&parsed_addr) == 443);
     }
 */
     {
-        PwValue subnet = pw_create_string("192.168.0.0/24");
-        PwValue netmask = PwNull();
-        PwValue parsed_subnet = pw_parse_subnet(&subnet, &netmask);
+        PwValue subnet = PW_NULL;
+        if (!pw_create_string("192.168.0.0/24", &subnet)) {
+            panic();
+        }
+        PwValue netmask = PW_NULL;
+        PwValue parsed_subnet = PW_NULL;
+        if (!pw_parse_subnet(&subnet, &netmask, &parsed_subnet)) {
+            panic();
+        }
         TEST(pw_sockaddr_ipv4(&parsed_subnet) == (192U << 24) + (168U << 16));
         TEST(pw_sockaddr_netmask(&parsed_subnet) == 24);
     }
     {
-        PwValue subnet = pw_create_string("192.168.0.0");
-        PwValue netmask = pw_create_string("255.255.255.0");
-        PwValue parsed_subnet = pw_parse_subnet(&subnet, &netmask);
+        PwValue subnet = PW_NULL;
+        if (!pw_create_string("192.168.0.0", &subnet)) {
+            panic();
+        }
+        PwValue netmask = PW_NULL;
+        if (!pw_create_string("255.255.255.0", &netmask)) {
+            panic();
+        }
+        PwValue parsed_subnet = PW_NULL;
+        if (!pw_parse_subnet(&subnet, &netmask, &parsed_subnet)) {
+            panic();
+        }
         TEST(pw_sockaddr_ipv4(&parsed_subnet) == (192U << 24) + (168U << 16));
         TEST(pw_sockaddr_netmask(&parsed_subnet) == 24);
         //pw_dump(stderr, &parsed_subnet);
     }
     {
         // prefer CIDR netmask
-        PwValue subnet = pw_create_string("192.168.0.0/8");
-        PwValue netmask = pw_create_string("255.255.255.0");
-        PwValue parsed_subnet = pw_parse_subnet(&subnet, &netmask);
+        PwValue subnet = PW_NULL;
+        if (!pw_create_string("192.168.0.0/8", &subnet)) {
+            panic();
+        }
+        PwValue netmask = PW_NULL;
+        if (!pw_create_string("255.255.255.0", &netmask)) {
+            panic();
+        }
+        PwValue parsed_subnet = PW_NULL;
+        if (!pw_parse_subnet(&subnet, &netmask, &parsed_subnet)) {
+            panic();
+        }
         TEST(pw_sockaddr_ipv4(&parsed_subnet) == (192U << 24) + (168U << 16));
         TEST(pw_sockaddr_netmask(&parsed_subnet) == 8);
     }
     {
         // bad IP address
-        PwValue subnet = pw_create_string("392.168.0.0/24");
-        PwValue netmask = PwNull();
-        PwValue parsed_subnet = pw_parse_subnet(&subnet, &netmask);
-        TEST(pw_error(&parsed_subnet));
-        TEST(parsed_subnet.status_code == PW_ERROR_BAD_IP_ADDRESS);
+        PwValue subnet = PW_NULL;
+        if (!pw_create_string("392.168.0.0/24", &subnet)) {
+            panic();
+        }
+        PwValue netmask = PW_NULL;
+        PwValue parsed_subnet = PW_NULL;
+        TEST(!pw_parse_subnet(&subnet, &netmask, &parsed_subnet));
+        TEST(current_task->status.status_code == PW_ERROR_BAD_IP_ADDRESS);
         //pw_dump(stderr, &parsed_subnet);
     }
     {
         // bad CIDR netmask
-        PwValue subnet = pw_create_string("192.168.0.0/124");
-        PwValue netmask = PwNull();
-        PwValue parsed_subnet = pw_parse_subnet(&subnet, &netmask);
-        TEST(parsed_subnet.status_code == PW_ERROR_BAD_NETMASK);
+        PwValue subnet = PW_NULL;
+        if (!pw_create_string("192.168.0.0/124", &subnet)) {
+            panic();
+        }
+        PwValue netmask = PW_NULL;
+        PwValue parsed_subnet = PW_NULL;
+        TEST(!pw_parse_subnet(&subnet, &netmask, &parsed_subnet));
+        TEST(current_task->status.status_code == PW_ERROR_BAD_NETMASK);
         //pw_dump(stderr, &parsed_subnet);
     }
     {
         // bad CIDR netmask
-        PwValue subnet = pw_create_string("192.168.0.0/24/12");
-        PwValue netmask = PwNull();
-        PwValue parsed_subnet = pw_parse_subnet(&subnet, &netmask);
-        TEST(parsed_subnet.status_code == PW_ERROR_BAD_NETMASK);
+        PwValue subnet = PW_NULL;
+        if (!pw_create_string("192.168.0.0/24/12", &subnet)) {
+            panic();
+        }
+        PwValue netmask = PW_NULL;
+        PwValue parsed_subnet = PW_NULL;
+        TEST(!pw_parse_subnet(&subnet, &netmask, &parsed_subnet));
+        TEST(current_task->status.status_code == PW_ERROR_BAD_NETMASK);
         //pw_dump(stderr, &parsed_subnet);
     }
 
     // pw_split_addr_port
     {
-        PwValue addr_port = pw_create_string("example.com:80");
-        PwValue parts = pw_split_addr_port(&addr_port);
-        PwValue addr = pw_array_item(&parts, 0);
-        PwValue port = pw_array_item(&parts, 1);
+        PwValue addr_port = PW_NULL;
+        if (!pw_create_string("example.com:80", &addr_port)) {
+            panic();
+        }
+        PwValue addr = PW_NULL;
+        PwValue port = PW_NULL;
+        if (!pw_split_addr_port(&addr_port, &addr, &port)) {
+            panic();
+        }
         TEST(pw_equal(&addr, "example.com"));
         TEST(pw_equal(&port, "80"));
     }
     {
-        PwValue addr_port = pw_create_string("80");
-        PwValue parts = pw_split_addr_port(&addr_port);
-        PwValue addr = pw_array_item(&parts, 0);
-        PwValue port = pw_array_item(&parts, 1);
+        PwValue addr_port = PW_NULL;
+        if (!pw_create_string("80", &addr_port)) {
+            panic();
+        }
+        PwValue addr = PW_NULL;
+        PwValue port = PW_NULL;
+        if (!pw_split_addr_port(&addr_port, &addr, &port)) {
+            panic();
+        }
         TEST(pw_equal(&addr, ""));
         TEST(pw_equal(&port, "80"));
     }
     {
-        PwValue addr_port = pw_create_string("::1");
-        PwValue parts = pw_split_addr_port(&addr_port);
-        PwValue addr = pw_array_item(&parts, 0);
-        PwValue port = pw_array_item(&parts, 1);
+        PwValue addr_port = PW_NULL;
+        if (!pw_create_string("::1", &addr_port)) {
+            panic();
+        }
+        PwValue addr = PW_NULL;
+        PwValue port = PW_NULL;
+        if (!pw_split_addr_port(&addr_port, &addr, &port)) {
+            panic();
+        }
         TEST(pw_equal(&addr, "::1"));
         TEST(pw_equal(&port, ""));
     }
     {
-        PwValue addr_port = pw_create_string("[2001:db8:85a3:8d3:1319:8a2e:370:7348]:443");
-        PwValue parts = pw_split_addr_port(&addr_port);
-        PwValue addr = pw_array_item(&parts, 0);
-        PwValue port = pw_array_item(&parts, 1);
+        PwValue addr_port = PW_NULL;
+        if (!pw_create_string("[2001:db8:85a3:8d3:1319:8a2e:370:7348]:443", &addr_port)) {
+            panic();
+        }
+        PwValue addr = PW_NULL;
+        PwValue port = PW_NULL;
+        if (!pw_split_addr_port(&addr_port, &addr, &port)) {
+            panic();
+        }
         TEST(pw_equal(&addr, "[2001:db8:85a3:8d3:1319:8a2e:370:7348]"));
         TEST(pw_equal(&port, "443"));
     }
@@ -1198,14 +1496,14 @@ void test_args()
             "three",
             "four=4"
         };
-        PwValue args = pw_parse_kvargs(
-            PW_LENGTH(argv),
-            argv
-        );
+        PwValue args = PW_NULL;
+        if (!pw_parse_kvargs(PW_LENGTH(argv), argv, &args)) {
+            panic();
+        }
         TEST(pw_is_map(&args));
-        for(unsigned i = 0; i < PW_LENGTH(argv); i++) {{
-            PwValue k = PwNull();
-            PwValue v = PwNull();
+        PwValue k = PW_NULL;
+        PwValue v = PW_NULL;
+        for(unsigned i = 0; i < PW_LENGTH(argv); i++) {
             TEST(pw_map_item(&args, i, &k, &v));
             if (i == 0) {
                 TEST(pw_equal(&k, 0));
@@ -1224,41 +1522,51 @@ void test_args()
                     TEST(pw_is_null(&v));
                 }
             }
-        }}
+        }
         //pw_dump(stderr, &args);
     }
 }
 
 void test_json()
 {
-    PwValue value = PwArray(
-        PwString_1_12(4, 't', 'h', 'i', 's', 0,0,0,0,0,0,0,0),
-        PwString_1_12(2, 'i', 's', 0,0,0,0,0,0,0,0,0,0),
-        PwString_1_12(1, 'a', 0,0,0,0,0,0,0,0,0,0,0),
-        PwMap(
-            PwString_1_12(6, 'n', 'u', 'm', 'b', 'e', 'r',0,0,0,0,0,0),
+    PwValue value = PW_NULL;
+    if (!pw_array_va(&value,
+        PwString(4, "this"),
+        PwString(2, "is"),
+        PwString(1, "a"),
+        pwva_map(
+            PwString(6, "number"),
             PwSigned(1),
-            PwString_1_12(4, 'l', 'i', 's', 't', 0,0,0,0,0,0,0,0),
-            PwArray(
-                PwString_1_12(3, 'o', 'n', 'e', 0,0,0,0,0,0,0,0,0),
-                PwString_1_12(3, 't', 'w', 'o', 0,0,0,0,0,0,0,0,0),
-                PwMap(
-                    PwString_1_12(5, 't', 'h', 'r', 'e', 'e', 0,0,0,0,0,0,0),
-                        PwArray(
+            PwString(4, "list"),
+            pwva_array(
+                PwString(3, "one"),
+                PwString(3, "two"),
+                pwva_map(
+                    PwString(5, "three"),
+                        pwva_array(
                             PwSigned(1),
                             PwSigned(2),
-                            PwMap( pw_create_string("four"), pw_create_string("five\nsix\n"))
+                            pwva_map( pwva(_pw_create_string_ascii, "four"), pwva(_pw_create_string_ascii, "five\nsix\n") )
                         )
                 )
             )
         ),
-        PwString_1_12(8, 'd', 'a', 'z', ' ', 'g', 'o', 'o', 'd', 0,0,0,0)
-    );
+        PwString(8, "daz good")
+    )) {
+        panic();
+    }
     {
-        PwValue result = pw_to_json(&value, 0);
-        PwValue reference = pw_create_string(
-            "[\"this\",\"is\",\"a\",{\"number\":1,\"list\":[\"one\",\"two\",{\"three\":[1,2,{\"four\":\"five\\nsix\\n\"}]}]},\"daz good\"]"
-        );
+        PwValue result = PW_NULL;
+        if (!pw_to_json(&value, 0, &result)) {
+            panic();
+        }
+        PwValue reference = PW_NULL;
+        if (!pw_create_string(
+            "[\"this\",\"is\",\"a\",{\"number\":1,\"list\":[\"one\",\"two\",{\"three\":[1,2,{\"four\":\"five\\nsix\\n\"}]}]},\"daz good\"]",
+            &reference
+        )) {
+            panic();
+        }
         //pw_dump(stderr, &result);
         //pw_dump(stderr, &reference);
         //PW_CSTRING_LOCAL(json, &result);
@@ -1266,8 +1574,12 @@ void test_json()
         TEST(pw_equal(&result, &reference));
     }
     {
-        PwValue result = pw_to_json(&value, 4);
-        PwValue reference = pw_create_string(
+        PwValue result = PW_NULL;
+        if (!pw_to_json(&value, 4, &result)) {
+            panic();
+        }
+        PwValue reference = PW_NULL;
+        if (!pw_create_string(
             "[\n"
             "    \"this\",\n"
             "    \"is\",\n"
@@ -1285,8 +1597,11 @@ void test_json()
             "        ]\n"
             "    },\n"
             "    \"daz good\"\n"
-            "]"
-        );
+            "]",
+            &reference
+        )) {
+            panic();
+        }
         //pw_dump(stderr, &result);
         //PW_CSTRING_LOCAL(json, &result);
         //fprintf(stderr, "%s\n", json);
@@ -1294,64 +1609,90 @@ void test_json()
     }
     // test pw_get
     {
-        PwValue v = pw_get(&value, "3", "number");
+        PwValue v = PW_NULL;
+        if (!pw_get(&v, &value, "3", "number")) {
+            panic();
+        }
         //pw_dump(stderr, &v);
         TEST(pw_equal(&v, 1));
 
-        PwValue v2 = pw_get(&value, "3", "list", "-1", "three", "1");
+        PwValue v2 = PW_NULL;
+        if (!pw_get(&v2, &value, "3", "list", "-1", "three", "1")) {
+            panic();
+        }
         //pw_dump(stderr, &v2);
         TEST(pw_equal(&v2, 2));
 
-        PwValue v3 = pw_get(&value, "0", "that");
-        TEST(pw_error(&v3));
+        PwValue v3 = PW_NULL;
+        TEST(!pw_get(&v3, &value, "0", "that"));
     }
     // test pw_set
     {
         PwValue v = PwUnsigned(777);
-        PwValue status = pw_set(&v, &value, "3", "number");
-        TEST(pw_ok(&status));
-        v = pw_get(&value, "3", "number");
+        if (!pw_set(&v, &value, "3", "number")) {
+            panic();
+        }
+        if (!pw_get(&v, &value, "3", "number")) {
+            panic();
+        }
         TEST(pw_equal(&v, 777));
     }{
         PwValue v = PwUnsigned(777);
-        PwValue status = pw_set(&v, &value, "3", "list", "-1", "three", "1");
-        TEST(pw_ok(&status));
-        v = pw_get(&value, "3", "list", "-1", "three", "1");
+        if (!pw_set(&v, &value, "3", "list", "-1", "three", "1")) {
+            panic();
+        }
+        if (!pw_get(&v, &value, "3", "list", "-1", "three", "1")) {
+            panic();
+        }
         TEST(pw_equal(&v, 777));
 
-        PwValue status2 = pw_set(&v, &value, "0", "that");
-        TEST(pw_error(&status2));
+        TEST(!pw_set(&v, &value, "0", "that"));
     }
 }
 
 void test_socket()
 {
     {
-        PwValue sock = pw_socket(PwTypeId_Socket, AF_LOCAL, SOCK_DGRAM, 0);
+        PwValue sock = PW_NULL;
+        if (!pw_socket(PwTypeId_Socket, AF_LOCAL, SOCK_DGRAM, 0, &sock)) {
+            panic();
+        }
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
-        PWDECL_String_1_12(local_addr, 7, 0, 'u', 'w', 't', 'e', 's', 't', 0, 0, 0, 0, 0);
-        PwValue status = pw_socket_bind(&sock, &local_addr);
+        PwValue local_addr = PW_STRING(7, "\0uwtest");
+        if (!pw_socket_bind(&sock, &local_addr)) {
+            panic();
+        }
         //pw_dump(stderr, &status);
-        TEST(pw_ok(&status));
     }
     {
-        PwValue sock = pw_socket(PwTypeId_Socket, AF_INET, SOCK_STREAM, 0);
+        PwValue sock = PW_NULL;
+        if (!pw_socket(PwTypeId_Socket, AF_INET, SOCK_STREAM, 0, &sock)) {
+            panic();
+        }
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
-        PwValue local_addr = PwCharPtr("0.0.0.0:23451");
-        PwValue status = pw_socket_bind(&sock, &local_addr);
+        PwValue local_addr = PW_CHARPTR("0.0.0.0:23451");
+        if (!pw_socket_bind(&sock, &local_addr)) {
+            panic();
+        }
         //pw_dump(stderr, &status);
-        TEST(pw_ok(&status));
     }
     {
-        PwValue sock = pw_socket(PwTypeId_Socket, AF_INET, SOCK_STREAM, 0);
+        PwValue sock = PW_NULL;
+        if (!pw_socket(PwTypeId_Socket, AF_INET, SOCK_STREAM, 0, &sock)) {
+            panic();
+        }
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
-        PwValue local_addr = pw_parse_inet_address("0.0.0.0:23451");
-        PwValue status = pw_socket_bind(&sock, &local_addr);
+        PwValue local_addr = PW_NULL;
+        if (!pw_parse_inet_address("0.0.0.0:23451", &local_addr)) {
+            panic();
+        }
+        if (!pw_socket_bind(&sock, &local_addr)) {
+            panic();
+        }
         //pw_dump(stderr, &status);
-        TEST(pw_ok(&status));
     }
 }
 
@@ -1366,7 +1707,10 @@ int main(int argc, char* argv[])
     //pet_allocator.verbose = true;
     init_allocator(&pet_allocator);
 
-    PwValue start_time = pw_monotonic();
+    PwValue start_time = PW_NULL;
+    if (!pw_monotonic(&start_time)) {
+        panic();
+    }
 
     test_icu();
     test_integral_types();
@@ -1380,9 +1724,13 @@ int main(int argc, char* argv[])
     test_json();
     test_socket();
 
-    PwValue end_time = pw_monotonic();
+    PwValue end_time = PW_NULL;
+    if (!pw_monotonic(&end_time)) {
+        panic();
+    }
     PwValue timediff = pw_timestamp_diff(&end_time, &start_time);
-    PwValue timediff_str = pw_to_string(&timediff);
+    PwValue timediff_str = PW_NULL;
+    TEST(pw_to_string(&timediff, &timediff_str));
     PW_CSTRING_LOCAL(timediff_cstr, &timediff_str);
     fprintf(stderr, "time elapsed: %s\n", timediff_cstr);
 

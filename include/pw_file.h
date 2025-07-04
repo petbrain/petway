@@ -59,56 +59,53 @@ typedef struct {
 extern unsigned PwInterfaceId_File;
 
 typedef struct {
-    PwResult (*open)(PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode);
+    [[nodiscard]] bool (*open)(PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode);
     /*
      * Open or create file with `open` function from standard C library.
      * `mode` is unused when file is not created
-     *
-     * Return status.
      */
 
-    void (*close)(PwValuePtr self);
+    [[nodiscard]] bool (*close)(PwValuePtr self);
     /*
      * Close file if was opened with `open` method or set with ownership transfer.
      */
 
-    int (*get_fd)(PwValuePtr self);
+    [[nodiscard]] int (*get_fd)(PwValuePtr self);
     /*
      * Returns file descriptor or -1.
      */
 
-    PwResult (*set_fd)(PwValuePtr self, int fd, bool take_ownership);
+    [[nodiscard]] bool (*set_fd)(PwValuePtr self, int fd, bool take_ownership);
     /*
      * Set file descriptor obtained elsewhere.
      * If `take_ownership` is true, File takes the ownership and fd will be closed by `close` method.
-     * Return status.
      */
 
-    PwResult (*get_name)(PwValuePtr self);
+    [[nodiscard]] bool (*get_name)(PwValuePtr self, PwValuePtr result);
     /*
      * Get file name.
      */
 
-    PwResult (*set_name)(PwValuePtr self, PwValuePtr file_name);
+    [[nodiscard]] bool (*set_name)(PwValuePtr self, PwValuePtr file_name);
     /*
      * Set file name.
      * This works only if file descriptor was set with `set_fd` method.
-     * Return status.
      */
 
-    PwResult (*set_nonblocking)(PwValuePtr self, bool mode);
+    [[nodiscard]] bool (*set_nonblocking)(PwValuePtr self, bool mode);
     /*
      * Set/reset nonblocking mode for file descriptor.
      */
 
-    PwResult (*seek)(PwValuePtr self, off_t offset, int whence);
+    [[nodiscard]] bool (*seek)(PwValuePtr self, off_t offset, int whence, off_t* position);
     /*
-     * Return position or error.
+     * XXX all clear but a good comment would be good
+     * position can be nullptr
      */
 
-    PwResult (*tell)(PwValuePtr self);
+    [[nodiscard]] bool (*tell)(PwValuePtr self, off_t* position);
     /*
-     * Return position or error.
+     * XXX all clear but a good comment would be good
      */
 
     // TODO truncate, etc.
@@ -124,7 +121,7 @@ extern unsigned PwInterfaceId_BufferedFile;
 
 typedef struct {
 
-    PwResult (*flush)(PwValuePtr self);
+    [[nodiscard]] bool (*flush)(PwValuePtr self);
     /*
      * Flush write buffer.
      */
@@ -139,41 +136,85 @@ typedef struct {
 // `pw_file_open` and `pw_file_from_fd` return BufferedFile
 // with read buffer equals to page size and with no write bufer
 
-#define pw_file_open(file_name, flags, mode) _Generic((file_name), \
-             char*: _pw_file_open_u8_wrapper,  \
-          char8_t*: _pw_file_open_u8,          \
-         char32_t*: _pw_file_open_u32,         \
-        PwValuePtr: _pw_file_open              \
-    )((file_name), (flags), (mode))
+#define pw_file_open(file_name, flags, mode, result) _Generic((file_name), \
+             char*: _pw_file_open_ascii,  \
+          char8_t*: _pw_file_open_u8,     \
+         char32_t*: _pw_file_open_u32,    \
+        PwValuePtr: _pw_file_open         \
+    )((file_name), (flags), (mode), (result))
 
-PwResult _pw_file_open(PwValuePtr file_name, int flags, mode_t mode);
+[[nodiscard]] bool _pw_file_open(PwValuePtr file_name, int flags, mode_t mode, PwValuePtr result);
 
-static inline PwResult _pw_file_open_u8  (char8_t*  file_name, int flags, mode_t mode) { __PWDECL_CharPtr  (fname, file_name); return _pw_file_open(&fname, flags, mode); }
-static inline PwResult _pw_file_open_u32 (char32_t* file_name, int flags, mode_t mode) { __PWDECL_Char32Ptr(fname, file_name); return _pw_file_open(&fname, flags, mode); }
-
-static inline PwResult _pw_file_open_u8_wrapper(char* file_name, int flags, mode_t mode)
+[[nodiscard]] static inline bool _pw_file_open_u8(char8_t*  file_name, int flags, mode_t mode, PwValuePtr result)
 {
-    return _pw_file_open_u8((char8_t*) file_name, flags, mode);
+    _PwValue fname = PW_CHARPTR(file_name);
+    return _pw_file_open(&fname, flags, mode, result);
 }
 
-PwResult pw_file_from_fd(int fd, bool take_ownership);
+[[nodiscard]] static inline bool _pw_file_open_u32(char32_t* file_name, int flags, mode_t mode, PwValuePtr result)
+{
+    _PwValue fname = PW_CHAR32PTR(file_name);
+    return _pw_file_open(&fname, flags, mode, result);
+}
 
-static inline void     pw_file_close   (PwValuePtr file) { pw_interface(file->type_id, File)->close(file); }
-static inline int      pw_file_get_fd  (PwValuePtr file) { return pw_interface(file->type_id, File)->get_fd(file); }
-static inline PwResult pw_file_get_name(PwValuePtr file) { return pw_interface(file->type_id, File)->get_name(file); }
-static inline PwResult pw_file_set_fd  (PwValuePtr file, int fd, bool take_ownership) { return pw_interface(file->type_id, File)->set_fd(file, fd, take_ownership); }
-static inline PwResult pw_file_set_name(PwValuePtr file, PwValuePtr file_name)        { return pw_interface(file->type_id, File)->set_name(file, file_name); }
-static inline PwResult pw_file_set_nonblocking(PwValuePtr file, bool mode)            { return pw_interface(file->type_id, File)->set_nonblocking(file, mode); }
-static inline PwResult pw_file_seek    (PwValuePtr file, off_t offset, int whence)    { return pw_interface(file->type_id, File)->seek(file, offset, whence); }
-static inline PwResult pw_file_tell    (PwValuePtr file) { return pw_interface(file->type_id, File)->tell(file); }
-static inline PwResult pw_file_flush   (PwValuePtr file) { return pw_interface(file->type_id, BufferedFile)->flush(file); }
+[[nodiscard]] static inline bool _pw_file_open_ascii(char* file_name, int flags, mode_t mode, PwValuePtr result)
+{
+    return _pw_file_open_u8((char8_t*) file_name, flags, mode, result);
+}
+
+[[nodiscard]] bool pw_file_from_fd(int fd, bool take_ownership, PwValuePtr result);
+
+[[nodiscard]] static inline bool pw_file_close(PwValuePtr file)
+{
+    return pw_interface(file->type_id, File)->close(file);
+}
+
+[[nodiscard]] static inline int  pw_file_get_fd(PwValuePtr file)
+{
+    return pw_interface(file->type_id, File)->get_fd(file);
+}
+
+[[nodiscard]] static inline bool pw_file_get_name(PwValuePtr file, PwValuePtr result)
+{
+    return pw_interface(file->type_id, File)->get_name(file, result);
+}
+
+[[nodiscard]] static inline bool pw_file_set_fd(PwValuePtr file, int fd, bool take_ownership)
+{
+    return pw_interface(file->type_id, File)->set_fd(file, fd, take_ownership);
+}
+
+[[nodiscard]] static inline bool pw_file_set_name(PwValuePtr file, PwValuePtr file_name)
+{
+    return pw_interface(file->type_id, File)->set_name(file, file_name);
+}
+
+[[nodiscard]] static inline bool pw_file_set_nonblocking(PwValuePtr file, bool mode)
+{
+    return pw_interface(file->type_id, File)->set_nonblocking(file, mode);
+}
+
+[[nodiscard]] static inline bool pw_file_seek(PwValuePtr file, off_t offset, int whence, off_t* position)
+{
+    return pw_interface(file->type_id, File)->seek(file, offset, whence, position);
+}
+
+[[nodiscard]] static inline bool pw_file_tell(PwValuePtr file, off_t* position)
+{
+    return pw_interface(file->type_id, File)->tell(file, position);
+}
+
+[[nodiscard]] static inline bool pw_file_flush(PwValuePtr file)
+{
+    return pw_interface(file->type_id, BufferedFile)->flush(file);
+}
 
 
 /****************************************************************
  * Miscellaneous functions
  */
 
-PwResult pw_file_size(PwValuePtr file_name);
+[[nodiscard]] bool pw_file_size(PwValuePtr file_name, off_t* size);
 /*
  * Return file size as Unsigned or Status if error.
  */
@@ -183,28 +224,13 @@ PwResult pw_file_size(PwValuePtr file_name);
  * Path functions, probably should be separated
  */
 
-PwResult pw_basename(PwValuePtr filename);
-PwResult pw_dirname(PwValuePtr filename);
+[[nodiscard]] bool pw_basename(PwValuePtr filename, PwValuePtr result);
+[[nodiscard]] bool pw_dirname(PwValuePtr filename, PwValuePtr result);
 
-/*
- * pw_path generic macro allows passing arguments
- * either by value or by reference.
- * When passed by value, the function destroys them
- * .
- * CAVEAT: DO NOT PASS LOCAL VARIABLES BY VALUES!
- */
+#define pw_path(result, ...)  \
+    _pw_path_va((result) __VA_OPT__(,) __VA_ARGS__, PwVaEnd())
 
-#define pw_path(part, ...) _Generic((part),  \
-        _PwValue:   _pw_path_v,  \
-        PwValuePtr: _pw_path_p   \
-    )((part) __VA_OPT__(,) __VA_ARGS__,  \
-        _Generic((part),  \
-            _PwValue:   PwVaEnd(),  \
-            PwValuePtr: nullptr     \
-        ))
-
-PwResult _pw_path_v(...);
-PwResult _pw_path_p(...);
+[[nodiscard]] bool _pw_path_va(PwValuePtr result, ...);
 
 #ifdef __cplusplus
 }

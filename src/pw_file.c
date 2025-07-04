@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include "include/pw.h"
+#include "src/pw_charptr_internal.h"
 #include "src/pw_interfaces_internal.h"
 #include "src/pw_string_internal.h"
 #include "src/pw_struct_internal.h"
@@ -29,22 +30,25 @@ typedef struct {
 
 
 // forward declaration
-static void file_close(PwValuePtr self);
+[[nodiscard]] static bool file_close(PwValuePtr self);
 
 
-static PwResult file_init(PwValuePtr self, void* ctor_args)
+[[nodiscard]] static bool file_init(PwValuePtr self, void* ctor_args)
 {
     // ctor_args is unused
 
     _PwFile* f = get_file_data_ptr(self);
     f->fd = -1;
     f->name = PwNull();
-    return PwOK();
+    return true;
 }
 
 static void file_fini(PwValuePtr self)
 {
-    file_close(self);
+    if (!file_close(self)) {
+        fprintf(stderr, "Failed %s\n", __func__);
+        pw_print_status(stderr, &current_task->status);
+    }
 }
 
 static void file_hash(PwValuePtr self, PwHashContext* ctx)
@@ -61,10 +65,11 @@ static void file_hash(PwValuePtr self, PwHashContext* ctx)
     _pw_hash_uint64(ctx, f->is_external_fd);
 }
 
-static PwResult file_deepcopy(PwValuePtr self)
+[[nodiscard]] static bool file_deepcopy(PwValuePtr self, PwValuePtr result)
 {
     // XXX duplicate fd?
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
 static void basic_file_dump(PwValuePtr self, FILE* fp)
@@ -101,23 +106,28 @@ static void file_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inde
 
 unsigned PwInterfaceId_File = 0;
 
-static PwResult file_open(PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode)
+[[nodiscard]] static bool file_open(PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode)
 {
     _PwFile* f = get_file_data_ptr(self);
 
     if (f->fd != -1) {
-        return PwError(PW_ERROR_FILE_ALREADY_OPENED);
+        pw_set_status(PwStatus(PW_ERROR_FILE_ALREADY_OPENED));
+        return false;
     }
 
     if (pw_is_charptr(file_name)) {
+
+        if (!pw_charptr_to_string(file_name, &f->name)) {
+            return false;
+        }
         switch (file_name->charptr_subtype) {
-            case PW_CHARPTR:
+            case PwSubType_CharPtr:
                 do {
                     f->fd = open((char*) file_name->charptr, flags, mode);
                 } while (f->fd == -1 && errno == EINTR);
                 break;
 
-            case PW_CHAR32PTR: {
+            case PwSubType_Char32Ptr: {
                 PW_CSTRING_LOCAL(fname, file_name);
                 do {
                     f->fd = open(fname, flags, mode);
@@ -128,6 +138,8 @@ static PwResult file_open(PwValuePtr self, PwValuePtr file_name, int flags, mode
                 _pw_panic_bad_charptr_subtype(file_name);
         }
     } else {
+        pw_clone2(file_name, &f->name);
+
         pw_assert_string(file_name);
         PW_CSTRING_LOCAL(fname, file_name);
         do {
@@ -137,78 +149,87 @@ static PwResult file_open(PwValuePtr self, PwValuePtr file_name, int flags, mode
 
     if (f->fd == -1) {
         f->error = errno;
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     }
-
-    // set file name
-    pw_destroy(&f->name);
-    f->name = pw_clone(file_name);
 
     f->is_external_fd = false;
     f->own_fd = true;
 
-    return PwOK();
+    return true;
 }
 
-static void file_close(PwValuePtr self)
+[[ nodiscard]] static bool file_close(PwValuePtr self)
 {
     _PwFile* f = get_file_data_ptr(self);
-
+    bool ret = true;;
     if (f->fd != -1 && f->own_fd) {
-        close(f->fd);
+        int result;
+        do {
+            result = close(f->fd);
+        } while (result == -1 && errno == EINTR);
+        ret = result == 0;
     }
     f->fd = -1;
     f->error = 0;
     pw_destroy(&f->name);
+    return ret;
 }
 
-static int file_get_fd(PwValuePtr self)
+[[nodiscard]] static int file_get_fd(PwValuePtr self)
 {
     return get_file_data_ptr(self)->fd;
 }
 
-static PwResult file_set_fd(PwValuePtr self, int fd, bool move)
+[[nodiscard]] static bool file_set_fd(PwValuePtr self, int fd, bool move)
 {
     _PwFile* f = get_file_data_ptr(self);
 
     if (f->fd != -1) {
         // fd already set
-        return PwError(PW_ERROR_FD_ALREADY_SET);
+        pw_set_status(PwStatus(PW_ERROR_FD_ALREADY_SET));
+        return false;
     }
     f->fd = fd;
     f->is_external_fd = true;
     f->own_fd = move;
-    return PwOK();
+    return true;
 }
 
-static PwResult file_get_name(PwValuePtr self)
+[[nodiscard]] static bool file_get_name(PwValuePtr self, PwValuePtr result)
 {
     _PwFile* f = get_file_data_ptr(self);
-    return pw_clone(&f->name);
+    pw_clone2(&f->name, result);
+    return true;
 }
 
-static PwResult file_set_name(PwValuePtr self, PwValuePtr file_name)
+[[nodiscard]] static bool file_set_name(PwValuePtr self, PwValuePtr file_name)
 {
     _PwFile* f = get_file_data_ptr(self);
 
     if (f->fd != -1 && !f->is_external_fd) {
         // not an externally set fd
-        return PwError(PW_ERROR_CANT_SET_FILENAME);
+        pw_set_status(PwStatus(PW_ERROR_CANT_SET_FILENAME));
+        return false;
     }
 
-    // set file name
-    pw_destroy(&f->name);
-    f->name = pw_clone(file_name);
-
-    return PwOK();
+    if (pw_is_charptr(file_name)) {
+        if (!pw_charptr_to_string(file_name, &f->name)) {
+            return false;
+        }
+    } else {
+        pw_clone2(file_name, &f->name);
+    }
+    return true;
 }
 
-static PwResult file_set_nonblocking(PwValuePtr self, bool mode)
+[[nodiscard]] static bool file_set_nonblocking(PwValuePtr self, bool mode)
 {
     _PwFile* f = get_file_data_ptr(self);
 
     if (f->fd == -1) {
-        return PwError(PW_ERROR_FILE_CLOSED);
+        pw_set_status(PwStatus(PW_ERROR_FILE_CLOSED));
+        return false;
     }
     int flags = fcntl(f->fd, F_GETFL, 0);
     if (mode) {
@@ -217,32 +238,36 @@ static PwResult file_set_nonblocking(PwValuePtr self, bool mode)
         flags &= ~O_NONBLOCK;
     }
     if (fcntl(f->fd, F_SETFL, flags) == -1) {
-        return PwErrno(errno);
-    } else {
-        return PwOK();
+        pw_set_status(PwErrno(errno));
+        return false;
     }
+    return true;
 }
 
-static PwResult file_seek(PwValuePtr self, off_t offset, int whence)
+[[nodiscard]] static bool file_seek(PwValuePtr self, off_t offset, int whence, off_t* position)
 {
     _PwFile* f = get_file_data_ptr(self);
-
     off_t pos = lseek(f->fd, offset, whence);
     if (pos == -1) {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     }
-    return PwUnsigned(pos);
+    if (position) {
+        *position = pos;
+    }
+    return true;
 }
 
-static PwResult file_tell(PwValuePtr self)
+[[nodiscard]] static bool file_tell(PwValuePtr self, off_t* position)
 {
     _PwFile* f = get_file_data_ptr(self);
 
-    off_t pos = lseek(f->fd, 0, SEEK_CUR);
-    if (pos == -1) {
-        return PwErrno(errno);
+    *position = lseek(f->fd, 0, SEEK_CUR);
+    if (*position == -1) {
+        pw_set_status(PwErrno(errno));
+        return false;
     }
-    return PwUnsigned(pos);
+    return true;
 }
 
 static PwInterface_File file_interface = {
@@ -262,7 +287,7 @@ static PwInterface_File file_interface = {
  * Reader interface for File
  */
 
-static PwResult file_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
+[[nodiscard]] static bool file_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
 {
     _PwFile* f = get_file_data_ptr(self);
 
@@ -273,11 +298,11 @@ static PwResult file_read(PwValuePtr self, void* buffer, unsigned buffer_size, u
 
     if (result < 0) {
         *bytes_read = 0;
-        return PwErrno(errno);
-    } else {
-        *bytes_read = (unsigned) result;
-        return PwOK();
+        pw_set_status(PwErrno(errno));
+        return false;
     }
+    *bytes_read = (unsigned) result;
+    return true;
 }
 
 static PwInterface_Reader file_reader_interface = {
@@ -289,7 +314,7 @@ static PwInterface_Reader file_reader_interface = {
  * Writer interface for File
  */
 
-static PwResult file_write(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written)
+[[nodiscard]] static bool file_write(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written)
 {
     _PwFile* f = get_file_data_ptr(self);
 
@@ -300,11 +325,11 @@ static PwResult file_write(PwValuePtr self, void* data, unsigned size, unsigned*
 
     if (result < 0) {
         *bytes_written = 0;
-        return PwErrno(errno);
-    } else {
-        *bytes_written = (unsigned) result;
-        return PwOK();
+        pw_set_status(PwErrno(errno));
+        return false;
     }
+    *bytes_written = (unsigned) result;
+    return true;
 }
 
 static PwInterface_Writer file_writer_interface = {
@@ -350,9 +375,9 @@ static void stop_read_lines(PwValuePtr self);
 
 #define get_bfile_data_ptr(value)  ((_PwBufferedFile*) _pw_get_data_ptr((value), PwTypeId_BufferedFile))
 
-static PwResult bfile_init(PwValuePtr self, void* ctor_args)
+[[nodiscard]] static bool bfile_init(PwValuePtr self, void* ctor_args)
 {
-    PwBufferedFileCtorArgs* args= ctor_args;
+    PwBufferedFileCtorArgs* args = ctor_args;
 
     _PwBufferedFile* f = get_bfile_data_ptr(self);
     f->read_buffer_size  = align_unsigned_to_page(args->read_bufsize);
@@ -361,18 +386,20 @@ static PwResult bfile_init(PwValuePtr self, void* ctor_args)
     if (f->read_buffer_size) {
         f->read_buffer = allocate(f->read_buffer_size, false);
         if (!f->read_buffer) {
-            return PwOOM();
+            pw_set_status(PwStatus(PW_ERROR_OOM));
+            return false;
         }
     }
     if (f->write_buffer_size) {
         f->write_buffer = allocate(f->write_buffer_size, false);
         if (!f->write_buffer) {
             release((void**) &f->read_buffer, f->read_buffer_size);
-            return PwOOM();
+            pw_set_status(PwStatus(PW_ERROR_OOM));
+            return false;
         }
     }
     f->pushback = PwNull();
-    return PwOK();
+    return true;
 }
 
 static void bfile_fini(PwValuePtr self)
@@ -413,75 +440,77 @@ static void bfile_dump(PwValuePtr self, FILE* fp, int first_indent, int next_ind
 
 unsigned PwInterfaceId_BufferedFile = 0;
 
-static PwResult bfile_strict_write(PwValuePtr self, uint8_t* data, unsigned size, unsigned* bytes_written)
+[[nodiscard]] static bool bfile_strict_write(PwValuePtr self, uint8_t* data, unsigned size, unsigned* bytes_written)
 /*
  * Try writing exactly `size` bytes at write_offset, preserving current file position.
  */
 {
     *bytes_written = 0;
     if (size == 0) {
-        return PwOK();
+        return true;
     }
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
-    PwValue saved_pos = PwNull();
-    PwValue write_pos = PwNull();
+    off_t saved_pos;
     if (!f->is_pipe) {
-        saved_pos = file_tell(self);
-        if (pw_errno(&saved_pos, ESPIPE)) {
-            f->is_pipe = true;
-        } else {
-            pw_return_if_error(&saved_pos);
+        if (!file_tell(self, &saved_pos)) {
+            if (pw_is_errno(ESPIPE)) {
+                f->is_pipe = true;
+            } else {
+                return false;
+            }
         }
         if (!f->is_pipe) {
-            write_pos = file_seek(self, f->write_offset, SEEK_SET);
-            pw_return_if_error(&write_pos);
+            if (!file_seek(self, f->write_offset, SEEK_SET, nullptr)) {
+                return false;
+            }
         }
     }
     unsigned offset = 0;
     unsigned remaining = size;
-    PwValue result = PwOK();
     do {
         unsigned n_written;
-        pw_destroy(&result);
-        result = file_write(self, data + offset, remaining, &n_written);
+        bool ret = file_write(self, data + offset, remaining, &n_written);
         *bytes_written += n_written;
-        if (pw_error(&result)) {
+        if (!ret) {
             break;
         }
-
         offset += n_written;
         remaining -= n_written;
 
     } while (remaining);
 
     if (!f->is_pipe) {
-        PwValue new_pos = file_tell(self);
-        pw_return_if_error(&new_pos);
+        off_t new_pos;
+        if (!file_tell(self, &new_pos)) {
+            return false;
+        }
+        f->write_offset = new_pos;
 
-        f->write_offset = new_pos.unsigned_value;
-
-        pw_expect_ok( file_seek(self, saved_pos.unsigned_value, SEEK_SET) );
+        if (!file_seek(self, saved_pos, SEEK_SET, nullptr)) {
+            return false;
+        }
     }
-    return pw_move(&result);
+    return true;
 }
 
-static PwResult bfile_flush(PwValuePtr self)
+[[nodiscard]] static bool bfile_flush(PwValuePtr self)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     if (f->write_position == 0) {
         // nothing to write
-        return PwOK();
+        return true;
     }
 
     if (f->iterating) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
 
     unsigned bytes_written;
-    PwValue result = bfile_strict_write(self, f->write_buffer, f->write_position, &bytes_written);
-    if (pw_error(&result)) {
+    bool ret = bfile_strict_write(self, f->write_buffer, f->write_position, &bytes_written);
+    if (!ret) {
         unsigned remaining = f->write_position - bytes_written;
         if (remaining) {
             // move unwritten data to the beginning of `data`
@@ -489,8 +518,7 @@ static PwResult bfile_flush(PwValuePtr self)
         }
     }
     f->write_position = 0;
-
-    return pw_move(&result);
+    return ret;
 }
 
 static PwInterface_BufferedFile bfile_buffered_file_interface = {
@@ -518,59 +546,65 @@ static void reset_bfile_data(PwValuePtr self)
 static void stop_read_lines(PwValuePtr self);
 
 
-static void bfile_close(PwValuePtr self)
+[[nodiscard]] static bool bfile_close(PwValuePtr self)
 {
     stop_read_lines(self);
-    bfile_flush(self);
+    bool ret = bfile_flush(self);
     reset_bfile_data(self);
-    file_close(self);
+    return file_close(self) || ret;  // XXX status is lost if flush failed
 }
 
-static PwResult bfile_set_fd(PwValuePtr self, int fd, bool move)
+[[nodiscard]] static bool bfile_set_fd(PwValuePtr self, int fd, bool move)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     if (f->iterating) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
     reset_bfile_data(self);
     return file_set_fd(self, fd, move);
 }
 
-static PwResult bfile_set_name(PwValuePtr self, PwValuePtr file_name)
+[[nodiscard]] static bool bfile_set_name(PwValuePtr self, PwValuePtr file_name)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     if (f->iterating) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
     reset_bfile_data(self);
     return file_set_name(self, file_name);
 }
 
-static PwResult bfile_seek(PwValuePtr self, off_t offset, int whence)
+[[nodiscard]] static bool bfile_seek(PwValuePtr self, off_t offset, int whence, off_t* position)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     if (f->iterating) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
-
     // flush write buffer
-    bfile_flush(self);
-
+    if (!bfile_flush(self)) {
+        return false;
+    }
     // seek
-    PwValue pos = file_seek(self, offset, whence);
-    pw_return_if_error(&pos);
-
+    if (!file_seek(self, offset, whence, position)) {
+        return false;
+    }
     // reset read buffer
     f->read_data_size = 0;
     f->read_position = 0;
 
     // set write position
-    f->write_offset = pos.unsigned_value;
-
-    return pw_move(&pos);
+    off_t pos;
+    if (!file_tell(self, &pos)) {
+        return false;
+    }
+    f->write_offset = pos;
+    return true;
 }
 
 static PwInterface_File bfile_file_interface = {
@@ -585,13 +619,14 @@ static PwInterface_File bfile_file_interface = {
  * Reader interface for BufferedFile
  */
 
-static PwResult bfile_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
+[[nodiscard]] static bool bfile_read(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     if (f->iterating) {
         *bytes_read = 0;
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
 
     if (f->read_buffer_size == 0) {
@@ -604,9 +639,12 @@ static PwResult bfile_read(PwValuePtr self, void* buffer, unsigned buffer_size, 
         // no data in the read_buffer, read next portion
         f->read_position = 0;
 
-        pw_expect_ok( file_read(self, f->read_buffer, f->read_buffer_size, &f->read_data_size) );
+        if (!file_read(self, f->read_buffer, f->read_buffer_size, &f->read_data_size)) {
+            return false;
+        }
         if (f->read_data_size == 0) {
-            return PwError(PW_ERROR_EOF);
+            pw_set_status(PwStatus(PW_ERROR_EOF));
+            return false;
         }
     }
     unsigned avail = f->read_data_size - f->read_position;
@@ -614,7 +652,7 @@ static PwResult bfile_read(PwValuePtr self, void* buffer, unsigned buffer_size, 
     memcpy(buffer, f->read_buffer + f->read_position, size);
     f->read_position += size;
     *bytes_read = size;
-    return PwOK();
+    return true;
 }
 
 static PwInterface_Reader bfile_reader_interface = {
@@ -626,18 +664,19 @@ static PwInterface_Reader bfile_reader_interface = {
  * Writer interface for File
  */
 
-static PwResult bfile_write(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written)
+[[nodiscard]] static bool bfile_write(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     *bytes_written = 0;
 
     if (size == 0) {
-        return PwOK();
+        return true;
     }
 
     if (f->iterating) {
-        return PwError(PW_ERROR_ITERATION_IN_PROGRESS);
+        pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
+        return false;
     }
 
     if (f->write_buffer_size == 0) {
@@ -655,20 +694,23 @@ static PwResult bfile_write(PwValuePtr self, void* data, unsigned size, unsigned
         *bytes_written += n;
         if (f->write_position < f->write_buffer_size) {
             // write_buffer is not full yet
-            return PwOK();
+            return true;
         }
         size -= n;
         data = ((uint8_t*) data) + n;
     }
     // write_buffer is full, flush it
-    pw_expect_ok( bfile_flush(self) );
-
+    if (!bfile_flush(self)) {
+        return false;
+    }
     // write directly to file
     while (size >= f->write_buffer_size) {{
         unsigned n;
-        PwValue status = bfile_strict_write(self, data, f->write_buffer_size, &n);
+        bool ret = bfile_strict_write(self, data, f->write_buffer_size, &n);
         *bytes_written += n;
-        pw_return_if_error(&status);
+        if (!ret) {
+            return false;
+        }
         size -= n;
         data = ((uint8_t*) data) + n;
     }}
@@ -679,7 +721,7 @@ static PwResult bfile_write(PwValuePtr self, void* data, unsigned size, unsigned
         *bytes_written += size;
         f->write_position = size;
     }
-    return PwOK();
+    return true;
 }
 
 static PwInterface_Writer bfile_writer_interface = {
@@ -691,36 +733,40 @@ static PwInterface_Writer bfile_writer_interface = {
  * LineReader interface methods
  */
 
-static PwResult start_read_lines(PwValuePtr self)
+[[nodiscard]] static bool start_read_lines(PwValuePtr self)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     if (f->read_buffer_size == 0) {
-        return PwError(PW_ERROR_UNBUFFERED_FILE);
+        pw_set_status(PwStatus(PW_ERROR_UNBUFFERED_FILE));
+        return false;
     }
 
     f->partial_utf8_len = 0;
     f->line_number = 0;
     pw_destroy(&f->pushback);
     f->iterating = true;
-    return PwOK();
+    return true;
 }
 
-static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
+[[nodiscard]] static bool read_line_inplace(PwValuePtr self, PwValuePtr line)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     if (f->read_buffer_size == 0) {
-        return PwError(PW_ERROR_UNBUFFERED_FILE);
+        pw_set_status(PwStatus(PW_ERROR_UNBUFFERED_FILE));
+        return false;
     }
-
-    pw_string_truncate(line, 0);
-
+    if (!pw_string_truncate(line, 0)) {
+        return false;
+    }
     if (pw_is_string(&f->pushback)) {
-        pw_expect_true( pw_string_append(line, &f->pushback) );
+        if (!pw_string_append(line, &f->pushback)) {
+            return false;
+        }
         pw_destroy(&f->pushback);
         f->line_number++;
-        return PwOK();
+        return true;
     }
     do {
         if (f->read_position == f->read_data_size) {
@@ -730,9 +776,12 @@ static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
             f->read_position = 0;
 
             // read next chunk of file
-            pw_expect_ok( file_read(self, f->read_buffer, f->read_buffer_size, &f->read_data_size) );
+            if (!file_read(self, f->read_buffer, f->read_buffer_size, &f->read_data_size)) {
+                return false;
+            }
             if (f->read_data_size == 0) {
-                return PwError(PW_ERROR_EOF);
+                pw_set_status(PwStatus(PW_ERROR_EOF));
+                return false;
             }
 
             if (f->partial_utf8_len) {
@@ -742,7 +791,8 @@ static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
                     if (f->read_position == f->read_data_size) {
                         // premature end of file
                         // XXX warn?
-                        return PwError(PW_ERROR_EOF);
+                        pw_set_status(PwStatus(PW_ERROR_EOF));
+                        return false;
                     }
 
                     char8_t c = f->read_buffer[f->read_position];
@@ -758,7 +808,9 @@ static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
                     char32_t chr;
                     if (read_utf8_buffer(&ptr, &bytes_remaining, &chr)) {
                         if (chr != 0xFFFFFFFF) {
-                            pw_expect_true( pw_string_append(line, chr) );
+                            if (!pw_string_append(line, chr)) {
+                                return false;
+                            }
                         }
                         break;
                     }
@@ -775,11 +827,13 @@ static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
                 break;
             }
             if (chr != 0xFFFFFFFF) {
-                pw_expect_true( pw_string_append(line, chr) );
+                if (!pw_string_append(line, chr)) {
+                    return false;
+                }
                 if (chr == '\n') {
                     f->read_position = f->read_data_size - bytes_remaining;
                     f->line_number++;
-                    return PwOK();
+                    return true;
                 }
             }
         }
@@ -792,7 +846,7 @@ static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
             f->read_position = 0;
             f->read_data_size = 0;
             f->line_number++;
-            return PwOK();
+            return true;
         }
 
         // go read next chunk
@@ -801,21 +855,22 @@ static PwResult read_line_inplace(PwValuePtr self, PwValuePtr line)
     } while(true);
 }
 
-static PwResult read_line(PwValuePtr self)
+[[nodiscard]] static bool read_line(PwValuePtr self, PwValuePtr result)
 {
-    PwValue result = PwString();
-    if (pw_ok(&result)) {
-        pw_expect_ok( read_line_inplace(self, &result) );
+    PwValue line = PwString(0, {});
+    if (!read_line_inplace(self, &line)) {
+        return false;
     }
-    return pw_move(&result);
+    pw_move(&line, result);
+    return true;
 }
 
-static bool unread_line(PwValuePtr self, PwValuePtr line)
+[[nodiscard]] static bool unread_line(PwValuePtr self, PwValuePtr line)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
     if (pw_is_null(&f->pushback)) {
-        f->pushback = pw_clone(line);
+        __pw_clone(line, &f->pushback);  // puchback is already Null, so use __pw_clone here
         f->line_number--;
         return true;
     } else {
@@ -823,7 +878,7 @@ static bool unread_line(PwValuePtr self, PwValuePtr line)
     }
 }
 
-static unsigned get_line_number(PwValuePtr self)
+[[nodiscard]] static unsigned get_line_number(PwValuePtr self)
 {
     return get_bfile_data_ptr(self)->line_number;
 }
@@ -897,60 +952,59 @@ void _pw_init_file()
  * Shorthand functions
  */
 
-PwResult _pw_file_open(PwValuePtr file_name, int flags, mode_t mode)
+[[nodiscard]] bool _pw_file_open(PwValuePtr file_name, int flags, mode_t mode, PwValuePtr result)
 {
     PwBufferedFileCtorArgs args = {
         .read_bufsize = sys_page_size,
         .write_bufsize = sys_page_size
     };
-    PwValue file = pw_create2(PwTypeId_BufferedFile, &args);
-    pw_return_if_error(&file);
-
-    pw_expect_ok( pw_interface(file.type_id, File)->open(&file, file_name, flags, mode) );
-
-    return pw_move(&file);
+    if (!pw_create2(PwTypeId_BufferedFile, &args, result)) {
+        return false;
+    }
+    return pw_interface(result->type_id, File)->open(result, file_name, flags, mode);
 }
 
-PwResult pw_file_from_fd(int fd, bool take_ownership)
+[[nodiscard]] bool pw_file_from_fd(int fd, bool take_ownership, PwValuePtr result)
 {
     PwBufferedFileCtorArgs args = {
         .read_bufsize = sys_page_size,
         .write_bufsize = sys_page_size
     };
-    PwValue file = pw_create2(PwTypeId_BufferedFile, &args);
-    pw_return_if_error(&file);
-
-    pw_expect_ok( pw_interface(file.type_id, File)->set_fd(&file, fd, take_ownership) );
-
-    return pw_move(&file);
+    if (!pw_create2(PwTypeId_BufferedFile, &args, result)) {
+        return false;
+    }
+    return pw_interface(result->type_id, File)->set_fd(result, fd, take_ownership);
 }
 
 /****************************************************************
  * Miscellaneous functions
  */
 
-static PwResult get_file_size(char* file_name)
+[[nodiscard]] static bool get_file_size(char* file_name, off_t* result)
 {
     struct stat statbuf;
     if (stat(file_name, &statbuf) == -1) {
-        return PwErrno(errno);
+        pw_set_status(PwErrno(errno));
+        return false;
     }
     if ( ! (statbuf.st_mode & S_IFREG)) {
-        return PwError(PW_ERROR_NOT_REGULAR_FILE);
+        pw_set_status(PwStatus(PW_ERROR_NOT_REGULAR_FILE));
+        return false;
     }
-    return PwUnsigned(statbuf.st_size);
+    *result = statbuf.st_size;
+    return true;
 }
 
-PwResult pw_file_size(PwValuePtr file_name)
+[[nodiscard]] bool pw_file_size(PwValuePtr file_name, off_t* result)
 {
     if (pw_is_charptr(file_name)) {
         switch (file_name->charptr_subtype) {
-            case PW_CHARPTR:
-                return get_file_size((char*) file_name->charptr);
+            case PwSubType_CharPtr:
+                return get_file_size((char*) file_name->charptr, result);
 
-            case PW_CHAR32PTR: {
+            case PwSubType_Char32Ptr: {
                 PW_CSTRING_LOCAL(fname, file_name);
-                return get_file_size(fname);
+                return get_file_size(fname, result);
             }
             default:
                 _pw_panic_bad_charptr_subtype(file_name);
@@ -958,7 +1012,7 @@ PwResult pw_file_size(PwValuePtr file_name)
     } else {
         pw_assert_string(file_name);
         PW_CSTRING_LOCAL(fname, file_name);
-        return get_file_size(fname);
+        return get_file_size(fname, result);
     }
 }
 
@@ -966,82 +1020,73 @@ PwResult pw_file_size(PwValuePtr file_name)
  * Path functions, probably should be separated
  */
 
-PwResult pw_basename(PwValuePtr filename)
+[[nodiscard]] bool pw_basename(PwValuePtr filename, PwValuePtr result)
 {
-    PwValue parts = PwNull();
+    PwValue parts = PW_NULL;
     if (pw_is_charptr(filename)) {
-        PwValue f = pw_clone(filename);
-        parts = pw_string_rsplit_chr(&f, '/', 1);
+        PwValue f = PW_NULL;
+        if (!pw_charptr_to_string(filename, &f)) {
+            return false;
+        }
+        if (!pw_string_rsplit_chr(&f, '/', 1, &parts)) {
+            return false;
+        }
     } else {
         pw_expect(String, filename);
-        parts = pw_string_rsplit_chr(filename, '/', 1);
+        if (!pw_string_rsplit_chr(filename, '/', 1, &parts)) {
+            return false;
+        }
     }
-    return pw_array_item(&parts, -1);
+    return pw_array_item(&parts, -1, result);
 }
 
-PwResult pw_dirname(PwValuePtr filename)
+[[nodiscard]] bool pw_dirname(PwValuePtr filename, PwValuePtr result)
 {
-    PwValue parts = PwNull();
+    PwValue parts = PW_NULL;
     if (pw_is_charptr(filename)) {
-        PwValue f = pw_clone(filename);
-        parts = pw_string_rsplit_chr(&f, '/', 1);
+        PwValue f = PW_NULL;
+        if (!pw_charptr_to_string(filename, &f)) {
+            return false;
+        }
+        if (!pw_string_rsplit_chr(&f, '/', 1, &parts)) {
+            return false;
+        }
     } else {
         pw_expect(String, filename);
-        parts = pw_string_rsplit_chr(filename, '/', 1);
+        if (!pw_string_rsplit_chr(filename, '/', 1, &parts)) {
+            return false;
+        }
     }
-    return pw_array_item(&parts, 0);
+    return pw_array_item(&parts, 0, result);
 }
 
-PwResult _pw_path_v(...)
+[[nodiscard]] bool _pw_path_va(PwValuePtr result, ...)
 {
-    PwValue parts = pw_create(PwTypeId_Array);
+    PwValue parts = PW_NULL;
+    if (!pw_create_array(&parts)) {
+        return false;
+    }
     va_list ap;
     va_start(ap);
     for (;;) {{
         PwValue arg = va_arg(ap, _PwValue);
         if (pw_is_status(&arg)) {
-            if (pw_va_end(&arg)) {
+            if (pw_is_va_end(&arg)) {
                 break;
             }
             _pw_destroy_args(ap);
             va_end(ap);
-            return pw_move(&arg);
+            pw_set_status(pw_clone(&arg));
+            return false;
         }
         if (pw_is_string(&arg) || pw_is_charptr(&arg)) {
-            PwValue status = pw_array_append(&parts, &arg);
-            if (pw_error(&status)) {
+            if (!pw_array_append(&parts, &arg)) {
                 _pw_destroy_args(ap);
                 va_end(ap);
-                return pw_move(&status);
+                return false;
             }
         }
     }}
     va_end(ap);
-    return pw_array_join('/', &parts);
-}
-
-PwResult _pw_path_p(...)
-{
-    PwValue parts = pw_create(PwTypeId_Array);
-    va_list ap;
-    va_start(ap);
-    for (;;) {
-        PwValuePtr arg = va_arg(ap, PwValuePtr);
-        if (!arg) {
-            break;
-        }
-        if (pw_error(arg)) {
-            va_end(ap);
-            return pw_clone(arg);
-        }
-        if (pw_is_string(arg) || pw_is_charptr(arg)) {
-            PwValue status = pw_array_append(&parts, arg);
-            if (pw_error(&status)) {
-                va_end(ap);
-                return pw_move(&status);
-            }
-        }
-    }
-    va_end(ap);
-    return pw_array_join('/', &parts);
+    return pw_array_join('/', &parts, result);
 }

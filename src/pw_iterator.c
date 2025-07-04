@@ -7,17 +7,17 @@
  * Iterator type
  */
 
-static PwResult iterator_init(PwValuePtr self, void* ctor_args)
+[[nodiscard]] static bool iterator_init(PwValuePtr self, void* ctor_args)
 {
     PwIteratorCtorArgs* args = ctor_args;
-    _PwIterator* data = get_iterator_data_ptr(self);
-    data->iterable = pw_clone(args->iterable);
-    return PwOK();
+    _PwIterator* data = get_iterator_ptr(self);
+    pw_clone2(args->iterable, &data->iterable);
+    return true;
 }
 
 static void iterator_fini(PwValuePtr self)
 {
-    _PwIterator* data = get_iterator_data_ptr(self);
+    _PwIterator* data = get_iterator_ptr(self);
     pw_destroy(&data->iterable);
 }
 
@@ -26,14 +26,15 @@ static void iterator_hash(PwValuePtr self, PwHashContext* ctx)
     pw_panic("Iterators do not support hashing");
 }
 
-static PwResult iterator_deepcopy(PwValuePtr self)
+[[nodiscard]] static bool iterator_deepcopy(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
 static void iterator_dump(PwValuePtr self, FILE* fp, int first_indent, int next_indent, _PwCompoundChain* tail)
 {
-    _PwIterator* data = get_iterator_data_ptr(self);
+    _PwIterator* data = get_iterator_ptr(self);
 
     _pw_dump_start(fp, self, first_indent);
     _pw_dump_struct_data(fp, self);
@@ -42,22 +43,23 @@ static void iterator_dump(PwValuePtr self, FILE* fp, int first_indent, int next_
     _pw_call_dump(fp, &data->iterable, next_indent, next_indent, nullptr);
 }
 
-static PwResult iterator_to_string(PwValuePtr self)
+[[nodiscard]] static bool iterator_to_string(PwValuePtr self, PwValuePtr result)
 {
-    return PwError(PW_ERROR_NOT_IMPLEMENTED);
+    pw_set_status(PwStatus(PW_ERROR_NOT_IMPLEMENTED));
+    return false;
 }
 
-static bool iterator_is_true(PwValuePtr self)
+[[nodiscard]] static bool iterator_is_true(PwValuePtr self)
 {
     return false;
 }
 
-static bool iterator_equal_sametype(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool iterator_equal_sametype(PwValuePtr self, PwValuePtr other)
 {
     return false;
 }
 
-static bool iterator_equal(PwValuePtr self, PwValuePtr other)
+[[nodiscard]] static bool iterator_equal(PwValuePtr self, PwValuePtr other)
 {
     return false;
 }

@@ -37,7 +37,6 @@ typedef struct {
     struct sockaddr_storage addr;
     unsigned netmask;  // netmask in CIDR notation, i.e. number of network bits;
                        // nonzero for subnet address, zero for host address
-
 } _PwSockAddrData;
 
 #define _pw_sockaddr_data_ptr(value)  ((_PwSockAddrData*) _pw_get_data_ptr((value), PwTypeId_SockAddr))
@@ -105,7 +104,7 @@ extern unsigned PwInterfaceId_Socket;
 
 typedef struct {
 
-    PwResult (*bind)(PwValuePtr self, PwValuePtr local_addr);
+    [[nodiscard]] bool (*bind)(PwValuePtr self, PwValuePtr local_addr);
     /*
      * Set `local_addr` in _PwSocketData structure and call `bind` function.
      *
@@ -118,24 +117,24 @@ typedef struct {
      * as a name in Linux abstract namespace.
      */
 
-    PwResult (*reuse_addr)(PwValuePtr self, bool reuse);
+    [[nodiscard]] bool (*reuse_addr)(PwValuePtr self, bool reuse);
     /*
      * Set or clear SO_REUSEADDR option for socket.
      */
 
-    PwResult (*set_nonblocking)(PwValuePtr self, bool mode);
+    [[nodiscard]] bool (*set_nonblocking)(PwValuePtr self, bool mode);
     /*
      * Set/reset nonblocking mode for socket.
      */
 
-    PwResult (*listen)(PwValuePtr self, int backlog);
+    [[nodiscard]] bool (*listen)(PwValuePtr self, int backlog);
     /*
      * Call `listen`, set listen_backlog
      *
      * If backlog is 0, it is set to 5.
      */
 
-    PwResult (*accept)(PwValuePtr self);
+    [[nodiscard]] bool (*accept)(PwValuePtr self, PwValuePtr result);
     /*
      * Accept incoming connection on listening socket
      * and return new socket with `remote_addr` initialized
@@ -143,11 +142,9 @@ typedef struct {
      *
      * The type of returned socket is same as self,
      * which means that AsyncSocket is returned if self is AsyncSocket.
-     *
-     * Return status on error.
      */
 
-    PwResult (*connect)(PwValuePtr self, PwValuePtr remote_addr);
+    [[nodiscard]] bool (*connect)(PwValuePtr self, PwValuePtr remote_addr);
     /*
      * Set `remote_addr` in _PwSocketData structure and call `connect` function.
      *
@@ -163,7 +160,7 @@ typedef struct {
      * (originally errnos are different, see man page).
      */
 
-    PwResult (*shutdown)(PwValuePtr self, int how);
+    [[nodiscard]] bool (*shutdown)(PwValuePtr self, int how);
     /*
      * Call `shutdown` function.
      */
@@ -220,47 +217,47 @@ typedef struct {
  * Shorthand functions
  */
 
-static inline PwResult pw_socket(PwTypeId type_id, int domain, int sock_type, int protocol)
+[[nodiscard]] static inline bool pw_socket(PwTypeId type_id, int domain, int sock_type, int protocol, PwValuePtr result)
 {
     PwSocketCtorArgs args = {
         .domain   = domain,
         .type     = sock_type,
         .protocol = protocol
     };
-    return pw_create2(type_id, &args);
+    return pw_create2(type_id, &args, result);
 }
 
-static inline PwResult pw_socket_bind(PwValuePtr sock, PwValuePtr local_addr)
+[[nodiscard]] static inline bool pw_socket_bind(PwValuePtr sock, PwValuePtr local_addr)
 {
     return pw_interface(sock->type_id, Socket)->bind(sock, local_addr);
 }
 
-static inline PwResult pw_socket_reuse_addr(PwValuePtr sock, bool reuse)
+[[nodiscard]] static inline bool pw_socket_reuse_addr(PwValuePtr sock, bool reuse)
 {
     return pw_interface(sock->type_id, Socket)->reuse_addr(sock, reuse);
 }
 
-static inline PwResult pw_socket_set_nonblocking(PwValuePtr sock, bool mode)
+[[nodiscard]] static inline bool pw_socket_set_nonblocking(PwValuePtr sock, bool mode)
 {
     return pw_interface(sock->type_id, Socket)->set_nonblocking(sock, mode);
 }
 
-static inline PwResult pw_socket_listen(PwValuePtr sock, int backlog)
+[[nodiscard]] static inline bool pw_socket_listen(PwValuePtr sock, int backlog)
 {
     return pw_interface(sock->type_id, Socket)->listen(sock, backlog);
 }
 
-static inline PwResult pw_socket_accept(PwValuePtr sock)
+[[nodiscard]] static inline bool pw_socket_accept(PwValuePtr sock, PwValuePtr result)
 {
-    return pw_interface(sock->type_id, Socket)->accept(sock);
+    return pw_interface(sock->type_id, Socket)->accept(sock, result);
 }
 
-static inline PwResult pw_socket_connect(PwValuePtr sock, PwValuePtr remote_addr)
+[[nodiscard]] static inline bool pw_socket_connect(PwValuePtr sock, PwValuePtr remote_addr)
 {
     return pw_interface(sock->type_id, Socket)->connect(sock, remote_addr);
 }
 
-static inline PwResult pw_socket_shutdown(PwValuePtr sock, int how)
+[[nodiscard]] static inline bool pw_socket_shutdown(PwValuePtr sock, int how)
 {
     return pw_interface(sock->type_id, Socket)->shutdown(sock, how);
 }
