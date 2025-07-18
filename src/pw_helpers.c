@@ -9,7 +9,7 @@ bool _pw_get(PwValuePtr result, PwValuePtr container, ...)
     va_list ap;
     va_start(ap);
     for (;;) {{
-        char* key = va_arg(ap, char*);
+        char8_t* key = va_arg(ap, char8_t*);
         if (key == nullptr) {
             va_end(ap);
             return true;
@@ -26,7 +26,7 @@ bool _pw_get(PwValuePtr result, PwValuePtr container, ...)
         PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
 
         // get value by key
-        PwValue k = PwCharPtr(key);
+        PwValue k = PwStringUtf8(key);
         if (!methods->get_item(&obj, &k, result)) {
             va_end(ap);
             return false;
@@ -44,7 +44,7 @@ bool _pw_set(PwValuePtr value, PwValuePtr container, ...)
     va_start(ap);
 
     // get first key
-    char* key = va_arg(ap, char*);
+    char8_t* key = va_arg(ap, char8_t*);
     if (key == nullptr) {
         va_end(ap);
         pw_set_status(PwStatus(PW_ERROR_KEY_NOT_FOUND));
@@ -52,7 +52,7 @@ bool _pw_set(PwValuePtr value, PwValuePtr container, ...)
     }
     for (;;) {{
         // get next key
-        char* next_key = va_arg(ap, char*);
+        char8_t* next_key = va_arg(ap, char8_t*);
         if (next_key == nullptr) {
             break;
         }
@@ -66,7 +66,7 @@ bool _pw_set(PwValuePtr value, PwValuePtr container, ...)
         PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
 
         // get nested object by key
-        PwValue k = PwCharPtr(key);
+        PwValue k = PwStringUtf8(key);
         PwValue nested_obj = PW_NULL;
         if (!methods->get_item(&obj, &k, &nested_obj)) {
             va_end(ap);
@@ -85,7 +85,7 @@ bool _pw_set(PwValuePtr value, PwValuePtr container, ...)
         return false;
     }
     PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
-    PwValue k = PwCharPtr(key);
+    PwValue k = PwStringUtf8(key);
     return methods->set_item(&obj, &k, value);
 }
 
@@ -105,7 +105,7 @@ bool pw_read_environment(PwValuePtr result)
         if (!separator) {
             continue;
         }
-        PwValue key = PwString(0, {});
+        PwValue key = PW_STRING("");
         if (!pw_string_append_substring(&key, var, 0, separator - var)) {
             return false;
         }

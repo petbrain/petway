@@ -4,7 +4,7 @@
 #include <unistd.h>
 
 #include "include/pw.h"
-#include "src/pw_charptr_internal.h"
+#include "include/pw_utf.h"
 #include "src/pw_interfaces_internal.h"
 #include "src/pw_string_internal.h"
 #include "src/pw_struct_internal.h"
@@ -115,37 +115,11 @@ unsigned PwInterfaceId_File = 0;
         return false;
     }
 
-    if (pw_is_charptr(file_name)) {
-
-        if (!pw_charptr_to_string(file_name, &f->name)) {
-            return false;
-        }
-        switch (file_name->charptr_subtype) {
-            case PwSubType_CharPtr:
-                do {
-                    f->fd = open((char*) file_name->charptr, flags, mode);
-                } while (f->fd == -1 && errno == EINTR);
-                break;
-
-            case PwSubType_Char32Ptr: {
-                PW_CSTRING_LOCAL(fname, file_name);
-                do {
-                    f->fd = open(fname, flags, mode);
-                } while (f->fd == -1 && errno == EINTR);
-                break;
-            }
-            default:
-                _pw_panic_bad_charptr_subtype(file_name);
-        }
-    } else {
-        pw_clone2(file_name, &f->name);
-
-        pw_assert_string(file_name);
-        PW_CSTRING_LOCAL(fname, file_name);
-        do {
-            f->fd = open(fname, flags, mode);
-        } while (f->fd == -1 && errno == EINTR);
-    }
+    pw_assert_string(file_name);
+    PW_CSTRING_LOCAL(fname, file_name);
+    do {
+        f->fd = open(fname, flags, mode);
+    } while (f->fd == -1 && errno == EINTR);
 
     if (f->fd == -1) {
         f->error = errno;
@@ -153,6 +127,7 @@ unsigned PwInterfaceId_File = 0;
         return false;
     }
 
+    pw_clone2(file_name, &f->name);
     f->is_external_fd = false;
     f->own_fd = true;
 
@@ -213,13 +188,7 @@ unsigned PwInterfaceId_File = 0;
         return false;
     }
 
-    if (pw_is_charptr(file_name)) {
-        if (!pw_charptr_to_string(file_name, &f->name)) {
-            return false;
-        }
-    } else {
-        pw_clone2(file_name, &f->name);
-    }
+    pw_clone2(file_name, &f->name);
     return true;
 }
 
@@ -360,7 +329,7 @@ typedef struct {
     bool is_pipe;
 
     // line reader data
-    char8_t  partial_utf8[4];   // UTF-8 sequence may span adjacent reads
+    char8_t  partial_utf8[8];   // UTF-8 sequence may span adjacent reads, the buffer size is for surrogate pair
     unsigned partial_utf8_len;
     _PwValue pushback;          // for unread_line
 
@@ -786,7 +755,7 @@ static PwInterface_Writer bfile_writer_interface = {
 
             if (f->partial_utf8_len) {
                 // process partial UTF-8 sequence
-                while (f->partial_utf8_len < 4) {
+                while (f->partial_utf8_len < sizeof(f->partial_utf8)) {
 
                     if (f->read_position == f->read_data_size) {
                         // premature end of file
@@ -806,7 +775,7 @@ static PwInterface_Writer bfile_writer_interface = {
                     char8_t* ptr = f->partial_utf8;
                     unsigned bytes_remaining = f->partial_utf8_len;
                     char32_t chr;
-                    if (read_utf8_buffer(&ptr, &bytes_remaining, &chr)) {
+                    if (_pw_decode_utf8_buffer(&ptr, &bytes_remaining, &chr)) {
                         if (chr != 0xFFFFFFFF) {
                             if (!pw_string_append(line, chr)) {
                                 return false;
@@ -823,7 +792,7 @@ static PwInterface_Writer bfile_writer_interface = {
         unsigned bytes_remaining = f->read_data_size - f->read_position;
         while (bytes_remaining) {
             char32_t chr;
-            if (!read_utf8_buffer(&ptr, &bytes_remaining, &chr)) {
+            if (!_pw_decode_utf8_buffer(&ptr, &bytes_remaining, &chr)) {
                 break;
             }
             if (chr != 0xFFFFFFFF) {
@@ -857,7 +826,7 @@ static PwInterface_Writer bfile_writer_interface = {
 
 [[nodiscard]] static bool read_line(PwValuePtr self, PwValuePtr result)
 {
-    PwValue line = PwString(0, {});
+    PwValue line = PW_STRING("");
     if (!read_line_inplace(self, &line)) {
         return false;
     }
@@ -980,10 +949,14 @@ void _pw_init_file()
  * Miscellaneous functions
  */
 
-[[nodiscard]] static bool get_file_size(char* file_name, off_t* result)
+[[nodiscard]] bool pw_file_size(PwValuePtr file_name, off_t* result)
 {
+    pw_assert_string(file_name);
+    PW_CSTRING_LOCAL(fname, file_name);
+
     struct stat statbuf;
-    if (stat(file_name, &statbuf) == -1) {
+
+    if (stat(fname, &statbuf) == -1) {
         pw_set_status(PwErrno(errno));
         return false;
     }
@@ -995,67 +968,26 @@ void _pw_init_file()
     return true;
 }
 
-[[nodiscard]] bool pw_file_size(PwValuePtr file_name, off_t* result)
-{
-    if (pw_is_charptr(file_name)) {
-        switch (file_name->charptr_subtype) {
-            case PwSubType_CharPtr:
-                return get_file_size((char*) file_name->charptr, result);
-
-            case PwSubType_Char32Ptr: {
-                PW_CSTRING_LOCAL(fname, file_name);
-                return get_file_size(fname, result);
-            }
-            default:
-                _pw_panic_bad_charptr_subtype(file_name);
-        }
-    } else {
-        pw_assert_string(file_name);
-        PW_CSTRING_LOCAL(fname, file_name);
-        return get_file_size(fname, result);
-    }
-}
-
 /****************************************************************
  * Path functions, probably should be separated
  */
 
 [[nodiscard]] bool pw_basename(PwValuePtr filename, PwValuePtr result)
 {
+    pw_expect(String, filename);
     PwValue parts = PW_NULL;
-    if (pw_is_charptr(filename)) {
-        PwValue f = PW_NULL;
-        if (!pw_charptr_to_string(filename, &f)) {
-            return false;
-        }
-        if (!pw_string_rsplit_chr(&f, '/', 1, &parts)) {
-            return false;
-        }
-    } else {
-        pw_expect(String, filename);
-        if (!pw_string_rsplit_chr(filename, '/', 1, &parts)) {
-            return false;
-        }
+    if (!pw_string_rsplit_chr(filename, '/', 1, &parts)) {
+        return false;
     }
     return pw_array_item(&parts, -1, result);
 }
 
 [[nodiscard]] bool pw_dirname(PwValuePtr filename, PwValuePtr result)
 {
+    pw_expect(String, filename);
     PwValue parts = PW_NULL;
-    if (pw_is_charptr(filename)) {
-        PwValue f = PW_NULL;
-        if (!pw_charptr_to_string(filename, &f)) {
-            return false;
-        }
-        if (!pw_string_rsplit_chr(&f, '/', 1, &parts)) {
-            return false;
-        }
-    } else {
-        pw_expect(String, filename);
-        if (!pw_string_rsplit_chr(filename, '/', 1, &parts)) {
-            return false;
-        }
+    if (!pw_string_rsplit_chr(filename, '/', 1, &parts)) {
+        return false;
     }
     return pw_array_item(&parts, 0, result);
 }
@@ -1079,7 +1011,7 @@ void _pw_init_file()
             pw_set_status(pw_clone(&arg));
             return false;
         }
-        if (pw_is_string(&arg) || pw_is_charptr(&arg)) {
+        if (pw_is_string(&arg)) {
             if (!pw_array_append(&parts, &arg)) {
                 _pw_destroy_args(ap);
                 va_end(ap);

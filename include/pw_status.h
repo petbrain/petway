@@ -18,32 +18,33 @@ extern "C" {
 #define PW_ERROR_INCOMPATIBLE_TYPE      6
 #define PW_ERROR_EOF                    7
 #define PW_ERROR_TIMEOUT                8
-#define PW_ERROR_DATA_SIZE_TOO_BIG      9
-#define PW_ERROR_INDEX_OUT_OF_RANGE    10
-#define PW_ERROR_ITERATION_IN_PROGRESS 11
-#define PW_ERROR_BAD_NUMBER            12
-#define PW_ERROR_BAD_DATETIME          13
-#define PW_ERROR_BAD_TIMESTAMP         14
-#define PW_ERROR_NUMERIC_OVERFLOW      15
-#define PW_ERROR_INCOMPLETE_UTF8       16
+#define PW_ERROR_STRING_TOO_LONG        9
+#define PW_ERROR_DATA_SIZE_TOO_BIG     10
+#define PW_ERROR_INDEX_OUT_OF_RANGE    11
+#define PW_ERROR_ITERATION_IN_PROGRESS 12
+#define PW_ERROR_BAD_NUMBER            13
+#define PW_ERROR_BAD_DATETIME          14
+#define PW_ERROR_BAD_TIMESTAMP         15
+#define PW_ERROR_NUMERIC_OVERFLOW      16
+#define PW_ERROR_INCOMPLETE_UTF8       17
 
 // array errors
-#define PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY  17
+#define PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY  18
 
 // map errors
-#define PW_ERROR_KEY_NOT_FOUND        18
+#define PW_ERROR_KEY_NOT_FOUND        19
 
 // File errors
-#define PW_ERROR_FILE_ALREADY_OPENED  19
-#define PW_ERROR_FD_ALREADY_SET       20
-#define PW_ERROR_CANT_SET_FILENAME    21
-#define PW_ERROR_FILE_CLOSED          22
-#define PW_ERROR_NOT_REGULAR_FILE     23
-#define PW_ERROR_UNBUFFERED_FILE      24
-#define PW_ERROR_WRITE                25
+#define PW_ERROR_FILE_ALREADY_OPENED  20
+#define PW_ERROR_FD_ALREADY_SET       21
+#define PW_ERROR_CANT_SET_FILENAME    22
+#define PW_ERROR_FILE_CLOSED          23
+#define PW_ERROR_NOT_REGULAR_FILE     24
+#define PW_ERROR_UNBUFFERED_FILE      25
+#define PW_ERROR_WRITE                26
 
 // StringIO errors
-#define PW_ERROR_UNREAD_FAILED        26
+#define PW_ERROR_UNREAD_FAILED        27
 
 
 uint16_t pw_define_status(char* status);

@@ -1,6 +1,7 @@
 project(petway)
 
-set(CMAKE_C_COMPILER clang-16)
+# set(CMAKE_VERBOSE_MAKEFILE ON)
+set(CMAKE_C_COMPILER clang)
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
@@ -19,7 +20,6 @@ add_library(petway STATIC
     src/pw_array.c
     src/pw_array_iterator.c
     src/pw_assert.c
-    src/pw_charptr.c
     src/pw_compound.c
     src/pw_datetime.c
     src/pw_dump.c
@@ -39,6 +39,7 @@ add_library(petway STATIC
     src/pw_to_json.c
     src/pw_task.c
     src/pw_types.c
+    src/pw_utf.c
 )
 
 target_include_directories(petway PUBLIC . include libpussy)

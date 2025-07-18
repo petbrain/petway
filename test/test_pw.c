@@ -8,6 +8,7 @@
 #include "include/pw_netutils.h"
 #include "include/pw_socket.h"
 #include "include/pw_to_json.h"
+#include "include/pw_utf.h"
 #include "src/pw_string_internal.h"
 
 int num_tests = 0;
@@ -384,15 +385,15 @@ void test_string()
         if (!pw_create_empty_string(0, 1, &v)) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 0);
+        TEST(pw_strlen(&v) == 0);
         TEST(_pw_string_capacity(&v) == 12);
-        TEST(_pw_string_char_size(&v) == 1);
+        TEST(v.char_size == 1);
         //pw_dump(stderr, &v);
 
         if (!pw_string_append(&v, "hello")) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 5);
+        TEST(pw_strlen(&v) == 5);
         TEST(_pw_string_capacity(&v) == 12);
         //pw_dump(stderr, &v);
 
@@ -400,7 +401,7 @@ void test_string()
             panic();
         }
 
-        TEST(_pw_string_length(&v) == 6);
+        TEST(pw_strlen(&v) == 6);
         TEST(_pw_string_capacity(&v) == 12);
         //pw_dump(stderr, &v);
 
@@ -410,8 +411,8 @@ void test_string()
                 panic();
             }
         }
-        TEST(_pw_string_length(&v) == 256);
-        TEST(_pw_string_char_size(&v) == 1);
+        TEST(pw_strlen(&v) == 256);
+        TEST(v.char_size == 1);
         //pw_dump(stderr, &v);
 
         if (!pw_string_append(&v, "pet")) {
@@ -480,7 +481,7 @@ void test_string()
         }
         TEST(pw_equal(&v, ""));
 
-        TEST(_pw_string_length(&v) == 0);
+        TEST(pw_strlen(&v) == 0);
         TEST(_pw_string_capacity(&v) == 264);
         //pw_dump(stderr, &v);
 
@@ -505,9 +506,9 @@ void test_string()
         if (!pw_string_append(&v, u8"สวัสดี")) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 6);
+        TEST(pw_strlen(&v) == 6);
         TEST(_pw_string_capacity(&v) == 268);  // capacity is slightly changed because of alignment and char_size increase
-        TEST(_pw_string_char_size(&v) == 2);
+        TEST(v.char_size == 2);
         TEST(pw_equal(&v, u8"สวัสดี"));
         //pw_dump(stderr, &v);
     }
@@ -517,15 +518,15 @@ void test_string()
         if (!pw_create_empty_string(1, 2, &v)) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 0);
+        TEST(pw_strlen(&v) == 0);
         TEST(_pw_string_capacity(&v) == 6);
-        TEST(_pw_string_char_size(&v) == 2);
+        TEST(v.char_size == 2);
         //pw_dump(stderr, &v);
 
         if (!pw_string_append(&v, u8"สบาย")) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 4);
+        TEST(pw_strlen(&v) == 4);
         TEST(_pw_string_capacity(&v) == 6);
         //pw_dump(stderr, &v);
 
@@ -535,7 +536,7 @@ void test_string()
         if (!pw_string_append(&v, 0x0e35)) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 6);
+        TEST(pw_strlen(&v) == 6);
         TEST(_pw_string_capacity(&v) == 6);
         TEST(pw_equal(&v, u8"สบายดี"));
         //pw_dump(stderr, &v);
@@ -554,9 +555,9 @@ void test_string()
                 panic();
             }
         }
-        TEST(_pw_string_length(&v) == 255);
+        TEST(pw_strlen(&v) == 255);
         TEST(_pw_string_capacity(&v) == 260);
-        TEST(_pw_string_char_size(&v) == 2);
+        TEST(v.char_size == 2);
         //pw_dump(stderr, &v);
 
         if (!pw_string_append(&v, U"สบาย")) {
@@ -621,7 +622,7 @@ void test_string()
         if (!pw_string_truncate(&v, 0)) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 0);
+        TEST(pw_strlen(&v) == 0);
         TEST(_pw_string_capacity(&v) == 260);
         //pw_dump(stderr, &v);
     }
@@ -631,9 +632,9 @@ void test_string()
         if (!pw_create_empty_string(1, 3, &v)) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 0);
+        TEST(pw_strlen(&v) == 0);
         TEST(_pw_string_capacity(&v) == 4);
-        TEST(_pw_string_char_size(&v) == 3);
+        TEST(v.char_size == 3);
         //pw_dump(stderr, &v);
     }
 
@@ -642,9 +643,9 @@ void test_string()
         if (!pw_create_empty_string(1, 4, &v)) {
             panic();
         }
-        TEST(_pw_string_length(&v) == 0);
+        TEST(pw_strlen(&v) == 0);
         TEST(_pw_string_capacity(&v) == 3);
-        TEST(_pw_string_char_size(&v) == 4);
+        TEST(v.char_size == 4);
         //pw_dump(stderr, &v);
     }
 
@@ -667,8 +668,8 @@ void test_string()
 
     { // test pw_strcat (by value)
         PwValue v = PW_NULL;
-        if (!pw_strcat(&v, pwva(_pw_create_string_ascii, "Hello! "), PwCharPtr("Thanks"),
-                       PwChar32Ptr(U"🙏"), PwCharPtr(u8"สวัสดี"))) {
+        if (!pw_strcat(&v, pwva(_pw_create_string_ascii, "Hello! "), PwStringAscii("Thanks"),
+                       PwStringUtf32(U"🙏"), PwStringUtf8(u8"สวัสดี"))) {
             panic();
         }
         TEST(pw_equal(&v, U"Hello! Thanks🙏สวัสดี"));
@@ -727,13 +728,13 @@ void test_string()
         char8_t data[2500];
         memset(data, '1', sizeof(data));
 
-        PwValue str = PW_STRING(0, {});
+        PwValue str = PW_STRING("");
 
         if (!pw_string_append_buffer(&str, data, sizeof(data))) {
             panic();
         }
-        TEST(_pw_string_capacity(&str) >= _pw_string_length(&str));
-        TEST(_pw_string_length(&str) == 2500);
+        TEST(_pw_string_capacity(&str) >= pw_strlen(&str));
+        TEST(pw_strlen(&str) == 2500);
         //pw_dump(stderr, &str);
     }
 
@@ -769,7 +770,7 @@ void test_string()
     }
 
     { // test isdigit, is_ascii_digit
-        PwValue empty = PwString(0, {});
+        PwValue empty = PW_STRING("");
         PwValue nondigit = PW_NULL;
         if (!pw_create_string(u8"123รูปโป๊", &nondigit)) {
             panic();
@@ -969,15 +970,15 @@ void test_array()
         TEST(pw_equal(&v, U"Hello/สวัสดี/Thanks/mulțumesc"));
         //pw_dump(stderr, &v);
     }
-    { // test join with CharPtr
+    { // test join with Ascii/UTF8/UTF32
         PwValue array = PW_NULL;
         if (!pw_create_array(&array)) {
             panic();
         }
-        PwValue sawatdee   = PwCharPtr(u8"สวัสดี");
-        PwValue thanks     = PwCharPtr("Thanks");
-        PwValue multsumesc = PwChar32Ptr(U"mulțumesc");
-        PwValue wat        = PwChar32Ptr(U"🙏");
+        PwValue sawatdee   = PwStringUtf8(u8"สวัสดี");
+        PwValue thanks     = PW_STRING_ASCII("Thanks");
+        PwValue multsumesc = PW_STRING_UTF32(U"mulțumesc");
+        PwValue wat        = PW_STRING_UTF32(U"🙏");
         if (!pw_array_append(&array, "Hello")) {
             panic();
         }
@@ -1000,15 +1001,16 @@ void test_array()
     { // test dedent
         PwValue array = PW_NULL;
         if (!pw_array_va(&array,
-                      PwCharPtr("   first line"),
-                      PwCharPtr("  second line"),
-                      PwCharPtr("    third line")
+                      PwStringAscii("   first line"),
+                      PwStringAscii("  second line"),
+                      PwStringAscii("    third line")
                      )) {
             panic();
         }
         if (!pw_array_dedent(&array)) {
             panic();
         }
+        //pw_dump(stderr, &array);
         PwValue v = PW_NULL;
         if (!pw_array_join(',', &array, &v)) {
             panic();
@@ -1053,18 +1055,17 @@ void test_map()
         //pw_dump(stderr, &map);
     }
     {
-        // XXX CType leftovers
         PwValue map = PW_NULL;
         if (!pw_map_va(&map,
-            PwCharPtr("let's"),       PwCharPtr("go!"),
+            PwStringAscii("let's"),   PwStringAscii("go!"),
             PwNull(),                 PwBool(true),
-            PwBool(true),             PwCharPtr("true"),
+            PwBool(true),             PwStringAscii("true"),
             PwSigned(-10),            PwBool(false),
             PwSigned('b'),            PwSigned(-42),
             PwUnsigned(100),          PwSigned(-1000000L),
             PwUnsigned(300000000ULL), PwFloat(1.23),
-            PwCharPtr(u8"สวัสดี"),      PwChar32Ptr(U"สบาย"),
-            PwCharPtr("finally"),     pwva_map(PwCharPtr("ok"), PwCharPtr("done"))
+            PwStringUtf8(u8"สวัสดี"),   PwStringUtf32(U"สบาย"),
+            PwStringAscii("finally"), pwva_map(PwStringAscii("ok"), PwStringAscii("done"))
         )) {
             panic();
         }
@@ -1090,7 +1091,7 @@ void test_file()
         if (!pw_start_read_lines(&file)) {
             panic();
         }
-        PwValue line = PW_STRING(0, {});
+        PwValue line = PW_STRING("");
         for (;;) {{
             if (!pw_read_line_inplace(&file, &line)) {
                 panic();
@@ -1123,7 +1124,7 @@ void test_file()
             //pw_dump(stderr, &dirname);
             TEST(pw_equal(&dirname, "/bin"));
             PwValue path = PW_NULL;
-            if (!pw_path(&path, PwCharPtr(""), PwCharPtr("bin"), PwCharPtr("bash"))) {
+            if (!pw_path(&path, PwStringAscii(""), PwStringAscii("bin"), PwStringAscii("bash"))) {
                 panic();
             }
             TEST(pw_equal(&path, "/bin/bash"));
@@ -1151,7 +1152,7 @@ void test_file()
         };
         for (unsigned i = 0; i < PW_LENGTH(sample_files); i++) {{
 
-            PwValue file_name = PwCharPtr(sample_files[i]);
+            PwValue file_name = PwStringAscii(sample_files[i]);
 
             off_t file_size;
             if (!pw_file_size(&file_name, &file_size)) {
@@ -1194,8 +1195,8 @@ void test_file()
                 panic();
             }
 
-            PwValue line_f = PW_STRING(0, {});
-            PwValue line_s = PW_STRING(0, {});
+            PwValue line_f = PW_STRING("");
+            PwValue line_s = PW_STRING("");
 
             for (;;) {{
                 PwValue status_f = PW_NULL;
@@ -1258,7 +1259,7 @@ void test_string_io()
         TEST(pw_equal(&line, "one\n"));
     }
     {
-        PwValue line = PW_STRING(0, {});
+        PwValue line = PW_STRING("");
         if (!pw_read_line_inplace(&sio, &line)) {
             panic();
         }
@@ -1272,14 +1273,14 @@ void test_string_io()
     }
     {
         // read pushed back
-        PwValue line = PW_STRING(0, {});
+        PwValue line = PW_STRING("");
         if (!pw_read_line_inplace(&sio, &line)) {
             panic();
         }
         TEST(pw_equal(&line, "two\n"));
     }
     {
-        PwValue line = PW_STRING(0, {});
+        PwValue line = PW_STRING("");
         if (!pw_read_line_inplace(&sio, &line)) {
             panic();
         }
@@ -1287,7 +1288,7 @@ void test_string_io()
     }
     {
         // EOF
-        PwValue line = PW_STRING(0, {});
+        PwValue line = PW_STRING("");
         TEST(!pw_read_line_inplace(&sio, &line));
         TEST(pw_is_eof());
     }
@@ -1531,18 +1532,18 @@ void test_json()
 {
     PwValue value = PW_NULL;
     if (!pw_array_va(&value,
-        PwString(4, "this"),
-        PwString(2, "is"),
-        PwString(1, "a"),
+        PwString("this"),
+        PwString("is"),
+        PwString("a"),
         pwva_map(
-            PwString(6, "number"),
+            PwString("number"),
             PwSigned(1),
-            PwString(4, "list"),
+            PwString("list"),
             pwva_array(
-                PwString(3, "one"),
-                PwString(3, "two"),
+                PwString("one"),
+                PwString("two"),
                 pwva_map(
-                    PwString(5, "three"),
+                    PwString("three"),
                         pwva_array(
                             PwSigned(1),
                             PwSigned(2),
@@ -1551,7 +1552,7 @@ void test_json()
                 )
             )
         ),
-        PwString(8, "daz good")
+        PwString("daz good")
     )) {
         panic();
     }
@@ -1659,7 +1660,7 @@ void test_socket()
         }
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
-        PwValue local_addr = PW_STRING(7, "\0uwtest");
+        PwValue local_addr = PW_STRING("\0uwtest");
         if (!pw_socket_bind(&sock, &local_addr)) {
             panic();
         }
@@ -1672,7 +1673,7 @@ void test_socket()
         }
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
-        PwValue local_addr = PW_CHARPTR("0.0.0.0:23451");
+        PwValue local_addr = PW_STRING_ASCII("0.0.0.0:23451");
         if (!pw_socket_bind(&sock, &local_addr)) {
             panic();
         }

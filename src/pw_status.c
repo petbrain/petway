@@ -9,6 +9,7 @@
 #include <libpussy/mmarray.h>
 
 #include "include/pw.h"
+#include "include/pw_utf.h"
 #include "src/pw_struct_internal.h"
 
 static char* basic_statuses[] = {
@@ -21,6 +22,7 @@ static char* basic_statuses[] = {
     [PW_ERROR_INCOMPATIBLE_TYPE]        = "INCOMPATIBLE_TYPE",
     [PW_ERROR_EOF]                      = "EOF",
     [PW_ERROR_TIMEOUT]                  = "TIMEOUT",
+    [PW_ERROR_STRING_TOO_LONG]          = "PW_ERROR_STRING_TOO_LONG",
     [PW_ERROR_DATA_SIZE_TOO_BIG]        = "DATA_SIZE_TOO_BIG",
     [PW_ERROR_INDEX_OUT_OF_RANGE]       = "INDEX_OUT_OF_RANGE",
     [PW_ERROR_ITERATION_IN_PROGRESS]    = "ITERATION_IN_PROGRESS",
@@ -215,17 +217,17 @@ static void status_hash(PwValuePtr self, PwHashContext* ctx)
 {
     if (!status) {
         pw_destroy(result);
-        *result = PwString(6, "(null)");
+        *result = PwString("(null)");
         return false;
     }
     if (!pw_is_status(status)) {
         pw_destroy(result);
-        *result = PwString(12, "(not status)");
+        *result = PwString("(not status)");
         return false;
     }
     if (!status->is_error) {
         pw_destroy(result);
-        *result = PwString(7, "Success");
+        *result = PwString("Success");
         return false;
     }
     char* status_str = pw_status_str(status->status_code);
@@ -240,7 +242,7 @@ static void status_hash(PwValuePtr self, PwHashContext* ctx)
         PwValuePtr desc = &status->status_data->description;
         if (pw_is_string(desc)) {
             description_length = pw_strlen(desc);
-            char_size = pw_string_char_size(desc);
+            char_size = desc->char_size;
         }
     } else {
         file_name = status->file_name;
@@ -282,7 +284,7 @@ static void status_hash(PwValuePtr self, PwHashContext* ctx)
 
 error:
     pw_destroy(result);
-    *result = PwString(7, "(error)");
+    *result = PwString("(error)");
     return false;
 }
 

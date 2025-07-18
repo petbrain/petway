@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "include/pw_netutils.h"
+#include "include/pw_utf.h"
 
 
 static inline bool end_of_line(PwValuePtr str, unsigned position)
@@ -203,7 +204,7 @@ decimal_float_only:
         }
         pos = next_pos;
 
-    } else if ( ! (pw_isspace(chr) || (allowed_terminators && u32_strchr(allowed_terminators, chr)))) {
+    } else if ( ! (pw_isspace(chr) || (allowed_terminators && utf32_strchr(allowed_terminators, chr)))) {
         pw_set_status(PwStatus(PW_ERROR_BAD_NUMBER));
         goto error;
     }
@@ -362,7 +363,7 @@ static bool parse_nanosecond_frac(PwValuePtr str, unsigned* pos, uint32_t* resul
         pos = pw_string_skip_spaces(str, pos);
         if (end_of_line(str, pos)) { goto out; }
         chr = pw_char_at(str, pos);
-        if (allowed_terminators && u32_strchr(allowed_terminators, chr)) { goto out; }
+        if (allowed_terminators && utf32_strchr(allowed_terminators, chr)) { goto out; }
     }
     // parse HH part
     for (unsigned i = 0; i < 2; i++, pos++) {
@@ -447,7 +448,7 @@ end_of_datetime:
         goto out;
     }
     chr = pw_char_at(str, pos);
-    if ( ! (pw_isspace(chr) || (allowed_terminators && u32_strchr(allowed_terminators, chr)))) {
+    if ( ! (pw_isspace(chr) || (allowed_terminators && utf32_strchr(allowed_terminators, chr)))) {
         goto bad_datetime;
     }
 
@@ -501,7 +502,7 @@ bad_datetime:
         goto out;
     }
     chr = pw_char_at(str, pos);
-    if ( ! (pw_isspace(chr) || (allowed_terminators && u32_strchr(allowed_terminators, chr)))) {
+    if ( ! (pw_isspace(chr) || (allowed_terminators && utf32_strchr(allowed_terminators, chr)))) {
         goto bad_timestamp;
     }
 

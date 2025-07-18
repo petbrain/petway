@@ -4,7 +4,6 @@
 #include "include/pw.h"
 #include "include/pw_parse.h"
 #include "src/pw_alloc.h"
-#include "src/pw_charptr_internal.h"
 #include "src/pw_array_internal.h"
 #include "src/pw_string_internal.h"
 #include "src/pw_struct_internal.h"
@@ -378,9 +377,6 @@ void _pw_destroy_array(PwTypeId type_id, _PwArray* array, PwValuePtr parent)
             pw_set_status(pw_clone(&arg));
             goto failure;
         }
-        if (!pw_charptr_to_string_inplace(&arg)) {
-            goto failure;
-        }
         if (!_pw_array_append_item(type_id, array, &arg, dest)) {
             goto failure;
         }
@@ -608,30 +604,17 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
     return true;
 }
 
-[[nodiscard]] bool _pw_array_join_c32(char32_t separator, PwValuePtr array, PwValuePtr result)
-{
-    char32_t s[2] = {separator, 0};
-    PwValue sep = PwChar32Ptr(s);
-    return _pw_array_join(&sep, array, result);
-}
-
-[[nodiscard]] bool _pw_array_join_u8(char8_t* separator, PwValuePtr array, PwValuePtr result)
-{
-    PwValue sep = PwCharPtr(separator);
-    return _pw_array_join(&sep, array, result);
-}
-
-[[nodiscard]] bool _pw_array_join_u32(char32_t*  separator, PwValuePtr array, PwValuePtr result)
-{
-    PwValue sep = PwChar32Ptr(separator);
-    return _pw_array_join(&sep, array, result);
-}
-
 [[nodiscard]] bool _pw_array_join(PwValuePtr separator, PwValuePtr array, PwValuePtr result)
 {
+    if (!pw_is_string(separator)) {
+        pw_set_status(PwStatus(PW_ERROR_INCOMPATIBLE_TYPE),
+                      "Bad separator type for pw_array_join: %u, %s",
+                      separator->type_id, pw_get_type_name(separator->type_id));
+        return false;
+    }
     unsigned num_items = pw_array_length(array);
     if (num_items == 0) {
-        *result = PwString(0, {});
+        *result = PwString("");
         return true;
     }
     if (num_items == 1) {
@@ -642,31 +625,15 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
         if (pw_is_string(&item)) {
             pw_move(&item, result);
             return true;
-        } if (pw_is_charptr(&item)) {
-            return pw_charptr_to_string(&item, result);
         } else {
             // XXX skipping non-string values
-            *result = PwString(0, {});
+            *result = PwString("");
             return true;
         }
     }
 
-    uint8_t max_char_size;
-    unsigned separator_len;
-
-    if (pw_is_string(separator)) {
-        max_char_size = _pw_string_char_size(separator);
-        separator_len = _pw_string_length(separator);
-
-    } if (pw_is_charptr(separator)) {
-        separator_len = _pw_charptr_strlen2(separator, &max_char_size);
-
-    } else {
-        pw_set_status(PwStatus(PW_ERROR_INCOMPATIBLE_TYPE),
-                      "Bad separator type for pw_array_join: %u, %s",
-                      separator->type_id, pw_get_type_name(separator->type_id));
-        return false;
-    }
+    uint8_t  max_char_size = separator->char_size;
+    unsigned separator_len = pw_strlen(separator);
 
     // calculate total length and max char width of string items
     unsigned result_len = 0;
@@ -680,10 +647,8 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
         }
         uint8_t char_size;
         if (pw_is_string(&item)) {
-            char_size = _pw_string_char_size(&item);
-            result_len += _pw_string_length(&item);
-        } else if (pw_is_charptr(&item)) {
-            result_len += _pw_charptr_strlen2(separator, &char_size);
+            char_size = item.char_size;
+            result_len += pw_strlen(&item);
         } else {
             // XXX skipping non-string values
             continue;
@@ -702,7 +667,7 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
         if (!pw_array_item(array, i, &item)) {
             return false;
         }
-        if (pw_is_string(&item) || pw_is_charptr(&item)) {
+        if (pw_is_string(&item)) {
             if (i) {
                 if (!_pw_string_append(result, separator)) {
                     pw_destroy(result);
@@ -718,9 +683,38 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
     return true;
 }
 
+[[nodiscard]] bool _pw_array_join_c32(char32_t separator, PwValuePtr array, PwValuePtr result)
+{
+    PwValue sep = PW_STRING("");
+    if (!pw_string_append(&sep, separator)) {
+        return false;
+    }
+    return _pw_array_join(&sep, array, result);
+}
+
+[[nodiscard]] bool _pw_array_join_utf8(char8_t* separator, PwValuePtr array, PwValuePtr result)
+{
+    PwValue sep = PW_STRING("");
+    if (!pw_string_append(&sep, separator)) {
+        return false;
+    }
+    return _pw_array_join(&sep, array, result);
+}
+
+[[nodiscard]] bool _pw_array_join_utf32(char32_t*  separator, PwValuePtr array, PwValuePtr result)
+{
+    PwValue sep = PW_STRING("");
+    if (!pw_string_append(&sep, separator)) {
+        return false;
+    }
+    return _pw_array_join(&sep, array, result);
+}
+
 [[nodiscard]] bool pw_array_dedent(PwValuePtr lines)
 {
-    // dedent inplace, so access items directly to avoid cloning
+    pw_assert_array(lines);
+
+    // dedent in-place, so access items directly to avoid cloning
     _PwArray* array = get_array_struct_ptr(lines);
 
     if (array->itercount) {
@@ -773,14 +767,8 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
  * Convert key to integer index, either signed or unsigned.
  */
 {
-    PwValue k = PW_NULL;
-    if (pw_is_charptr(key)) {
-        if (!pw_charptr_to_string(key, &k)) {
-            return false;
-        }
-    } else {
-        pw_clone2(key, &k);
-    }
+    PwValue k = pw_clone(key);
+
     if (pw_is_string(&k)) {
         PwValue index = PW_NULL;
         if (!pw_parse_number(&k, &index)) {

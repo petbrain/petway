@@ -27,19 +27,39 @@ typedef struct {
 
 #define pw_create_string_io(str, result) _Generic((str), \
              char*: _pw_create_string_io_ascii,  \
-          char8_t*: _pw_create_string_io_u8,     \
-         char32_t*: _pw_create_string_io_u32,    \
+          char8_t*: _pw_create_string_io_utf8,   \
+         char32_t*: _pw_create_string_io_utf32,  \
         PwValuePtr: _pw_create_string_io         \
     )((str), (result))
 
-[[nodiscard]] bool _pw_create_string_io_u8 (char8_t* str,   PwValuePtr result);
-[[nodiscard]] bool _pw_create_string_io_u32(char32_t* str,  PwValuePtr result);
-[[nodiscard]] bool _pw_create_string_io    (PwValuePtr str, PwValuePtr result);
-
 [[nodiscard]] static inline bool _pw_create_string_io_ascii(char* str, PwValuePtr result)
 {
-    return _pw_create_string_io_u8((char8_t*) str, result);
+    PwValue v = PwStringAscii(str);
+    PwStringIOCtorArgs args = { .string = &v };
+    return pw_create2(PwTypeId_StringIO, &args, result);
 }
+
+[[nodiscard]] static inline bool _pw_create_string_io_utf8(char8_t* str, PwValuePtr result)
+{
+    PwValue v = PwStringUtf8(str);
+    PwStringIOCtorArgs args = { .string = &v };
+    return pw_create2(PwTypeId_StringIO, &args, result);
+}
+
+[[nodiscard]] static inline bool _pw_create_string_io_utf32(char32_t* str, PwValuePtr result)
+{
+    PwValue v = PwStringUtf32(str);
+    PwStringIOCtorArgs args = { .string = &v };
+    return pw_create2(PwTypeId_StringIO, &args, result);
+}
+
+[[nodiscard]] static inline bool _pw_create_string_io(PwValuePtr str, PwValuePtr result)
+{
+    PwStringIOCtorArgs args = { .string = str };
+    return pw_create2(PwTypeId_StringIO, &args, result);
+}
+
+
 
 #ifdef __cplusplus
 }

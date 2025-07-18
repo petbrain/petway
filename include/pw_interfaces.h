@@ -28,9 +28,8 @@ typedef struct __PwInterface _PwInterface;
 /****************************************************************
  * RandomAccess interface
  *
- * Methods that accept key argument may convert it
- * from String or CharPtr to number if items are accessible
- * by numeric index.
+ * Methods that accept key argument may convert it from String
+ * to number if items are accessible by numeric index.
  */
 
 typedef struct {
@@ -145,6 +144,9 @@ char* pw_get_interface_name(unsigned interface_id);
 /*
  * Get registered interface name by id.
  */
+
+[[noreturn]]
+void _pw_panic_no_interface(PwTypeId type_id, unsigned interface_id);
 
 static inline _PwInterface* _pw_lookup_interface(PwTypeId type_id, unsigned interface_id)
 {

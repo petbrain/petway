@@ -4,7 +4,6 @@
 
 #include "include/pw.h"
 #include "src/pw_array_internal.h"
-#include "src/pw_charptr_internal.h"
 #include "src/pw_compound_internal.h"
 #include "src/pw_interfaces_internal.h"
 #include "src/pw_string_internal.h"
@@ -37,7 +36,7 @@ static void null_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inde
 [[nodiscard]] static bool null_to_string(PwValuePtr self, PwValuePtr result)
 {
     pw_destroy(result);
-    *result = PwString(4, "null");
+    *result = PwString("null");
     return true;
 }
 
@@ -59,7 +58,6 @@ static void null_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inde
             case PwTypeId_Null:
                 return true;
 
-            case PwTypeId_CharPtr:
             case PwTypeId_Ptr:
                 return other->ptr == nullptr;
 
@@ -119,9 +117,9 @@ static void bool_dump(PwValuePtr self, FILE* fp, int first_indent, int next_inde
 {
     pw_destroy(result);
     if (self->bool_value) {
-        *result = PwString(4, "true");
+        *result = PwString("true");
     } else {
-        *result = PwString(5, "false");
+        *result = PwString("false");
     }
     return true;
 }
@@ -792,7 +790,6 @@ static PwType* basic_types[] = {
     [PwTypeId_DateTime]  = &datetime_type,
     [PwTypeId_Timestamp] = &timestamp_type,
     [PwTypeId_Ptr]       = &ptr_type,
-    [PwTypeId_CharPtr]   = &_pw_charptr_type,
     [PwTypeId_String]    = &_pw_string_type,
     [PwTypeId_Struct]    = &_pw_struct_type,
     [PwTypeId_Compound]  = &_pw_compound_type,

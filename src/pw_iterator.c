@@ -23,7 +23,7 @@ static void iterator_fini(PwValuePtr self)
 
 static void iterator_hash(PwValuePtr self, PwHashContext* ctx)
 {
-    pw_panic("Iterators do not support hashing");
+    pw_panic("Iterators do not support hashing\n");
 }
 
 [[nodiscard]] static bool iterator_deepcopy(PwValuePtr self, PwValuePtr result)

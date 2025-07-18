@@ -55,8 +55,8 @@ extern "C" {
                  float: _pw_array_append_float,     \
                 double: _pw_array_append_float,     \
                  char*: _pw_array_append_ascii,     \
-              char8_t*: _pw_array_append_u8,        \
-             char32_t*: _pw_array_append_u32,       \
+              char8_t*: _pw_array_append_utf8,      \
+             char32_t*: _pw_array_append_utf32,     \
             PwValuePtr: _pw_array_append            \
     )((array), (item))
 
@@ -64,21 +64,17 @@ extern "C" {
 /*
  * The basic append function.
  *
- * `item` is cloned before appending. CharPtr values are converted to PW strings.
+ * `item` is cloned before appending.
  */
 
-[[nodiscard]] static inline bool _pw_array_append_null    (PwValuePtr array, PwType_Null     item) { _PwValue v = PW_NULL;            return _pw_array_append(array, &v); }
-[[nodiscard]] static inline bool _pw_array_append_bool    (PwValuePtr array, PwType_Bool     item) { _PwValue v = PW_BOOL(item);      return _pw_array_append(array, &v); }
-[[nodiscard]] static inline bool _pw_array_append_signed  (PwValuePtr array, PwType_Signed   item) { _PwValue v = PW_SIGNED(item);    return _pw_array_append(array, &v); }
-[[nodiscard]] static inline bool _pw_array_append_unsigned(PwValuePtr array, PwType_Unsigned item) { _PwValue v = PW_UNSIGNED(item);  return _pw_array_append(array, &v); }
-[[nodiscard]] static inline bool _pw_array_append_float   (PwValuePtr array, PwType_Float    item) { _PwValue v = PW_FLOAT(item);     return _pw_array_append(array, &v); }
-[[nodiscard]] static inline bool _pw_array_append_u8      (PwValuePtr array, char8_t*        item) { _PwValue v = PW_CHARPTR(item);   return _pw_array_append(array, &v); }
-[[nodiscard]] static inline bool _pw_array_append_u32     (PwValuePtr array, char32_t*       item) { _PwValue v = PW_CHAR32PTR(item); return _pw_array_append(array, &v); }
-
-[[nodiscard]] static inline bool _pw_array_append_ascii(PwValuePtr array, char* item)
-{
-    return _pw_array_append_u8(array, (char8_t*) item);
-}
+[[nodiscard]] static inline bool _pw_array_append_null    (PwValuePtr array, PwType_Null     item) { _PwValue v = PW_NULL;             return _pw_array_append(array, &v); }
+[[nodiscard]] static inline bool _pw_array_append_bool    (PwValuePtr array, PwType_Bool     item) { _PwValue v = PW_BOOL(item);       return _pw_array_append(array, &v); }
+[[nodiscard]] static inline bool _pw_array_append_signed  (PwValuePtr array, PwType_Signed   item) { _PwValue v = PW_SIGNED(item);     return _pw_array_append(array, &v); }
+[[nodiscard]] static inline bool _pw_array_append_unsigned(PwValuePtr array, PwType_Unsigned item) { _PwValue v = PW_UNSIGNED(item);   return _pw_array_append(array, &v); }
+[[nodiscard]] static inline bool _pw_array_append_float   (PwValuePtr array, PwType_Float    item) { _PwValue v = PW_FLOAT(item);      return _pw_array_append(array, &v); }
+[[nodiscard]] static inline bool _pw_array_append_ascii   (PwValuePtr array, char*           item) {  PwValue v = PwStringAscii(item); return _pw_array_append(array, &v); }
+[[nodiscard]] static inline bool _pw_array_append_utf8    (PwValuePtr array, char8_t*        item) {  PwValue v = PwStringUtf8(item);  return _pw_array_append(array, &v); }
+[[nodiscard]] static inline bool _pw_array_append_utf32   (PwValuePtr array, char32_t*       item) {  PwValue v = PwStringUtf32(item); return _pw_array_append(array, &v); }
 
 [[nodiscard]] bool _pw_array_append_va(PwValuePtr array, ...);
 /*
@@ -97,7 +93,7 @@ extern "C" {
 [[nodiscard]] bool pw_array_append_ap(PwValuePtr array, va_list ap);
 /*
  * Append items to the `array`.
- * Item are cloned before appending. CharPtr values are converted to PW strings.
+ * Item are cloned before appending.
  */
 
 #define pw_array_insert(array, index, item) _Generic((item), \
@@ -116,8 +112,8 @@ extern "C" {
                  float: _pw_array_insert_float,     \
                 double: _pw_array_insert_float,     \
                  char*: _pw_array_insert_ascii,     \
-              char8_t*: _pw_array_insert_u8,        \
-             char32_t*: _pw_array_insert_u32,       \
+              char8_t*: _pw_array_insert_utf8,      \
+             char32_t*: _pw_array_insert_utf32,     \
             PwValuePtr: _pw_array_insert            \
     )((array), (index), (item))
 
@@ -125,21 +121,17 @@ extern "C" {
 /*
  * The basic insert function.
  *
- * `item` is cloned before inserting. CharPtr values are converted to PW strings.
+ * `item` is cloned before inserting.
  */
 
-[[nodiscard]] static inline bool _pw_array_insert_null    (PwValuePtr array, unsigned index, PwType_Null     item) { _PwValue v = PW_NULL;            return _pw_array_insert(array, index, &v); }
-[[nodiscard]] static inline bool _pw_array_insert_bool    (PwValuePtr array, unsigned index, PwType_Bool     item) { _PwValue v = PW_BOOL(item);      return _pw_array_insert(array, index, &v); }
-[[nodiscard]] static inline bool _pw_array_insert_signed  (PwValuePtr array, unsigned index, PwType_Signed   item) { _PwValue v = PW_SIGNED(item);    return _pw_array_insert(array, index, &v); }
-[[nodiscard]] static inline bool _pw_array_insert_unsigned(PwValuePtr array, unsigned index, PwType_Unsigned item) { _PwValue v = PW_UNSIGNED(item);  return _pw_array_insert(array, index, &v); }
-[[nodiscard]] static inline bool _pw_array_insert_float   (PwValuePtr array, unsigned index, PwType_Float    item) { _PwValue v = PW_FLOAT(item);     return _pw_array_insert(array, index, &v); }
-[[nodiscard]] static inline bool _pw_array_insert_u8      (PwValuePtr array, unsigned index, char8_t*        item) { _PwValue v = PW_CHARPTR(item);   return _pw_array_insert(array, index, &v); }
-[[nodiscard]] static inline bool _pw_array_insert_u32     (PwValuePtr array, unsigned index, char32_t*       item) { _PwValue v = PW_CHAR32PTR(item); return _pw_array_insert(array, index, &v); }
-
-[[nodiscard]] static inline bool _pw_array_insert_ascii(PwValuePtr array, unsigned index, char* item)
-{
-    return _pw_array_insert_u8(array, index, (char8_t*) item);
-}
+[[nodiscard]] static inline bool _pw_array_insert_null    (PwValuePtr array, unsigned index, PwType_Null     item) { _PwValue v = PW_NULL;             return _pw_array_insert(array, index, &v); }
+[[nodiscard]] static inline bool _pw_array_insert_bool    (PwValuePtr array, unsigned index, PwType_Bool     item) { _PwValue v = PW_BOOL(item);       return _pw_array_insert(array, index, &v); }
+[[nodiscard]] static inline bool _pw_array_insert_signed  (PwValuePtr array, unsigned index, PwType_Signed   item) { _PwValue v = PW_SIGNED(item);     return _pw_array_insert(array, index, &v); }
+[[nodiscard]] static inline bool _pw_array_insert_unsigned(PwValuePtr array, unsigned index, PwType_Unsigned item) { _PwValue v = PW_UNSIGNED(item);   return _pw_array_insert(array, index, &v); }
+[[nodiscard]] static inline bool _pw_array_insert_float   (PwValuePtr array, unsigned index, PwType_Float    item) { _PwValue v = PW_FLOAT(item);      return _pw_array_insert(array, index, &v); }
+[[nodiscard]] static inline bool _pw_array_insert_ascii   (PwValuePtr array, unsigned index, char*           item) {  PwValue v = PwStringAscii(item); return _pw_array_insert(array, index, &v); }
+[[nodiscard]] static inline bool _pw_array_insert_utf8    (PwValuePtr array, unsigned index, char8_t*        item) {  PwValue v = PwStringUtf8(item);  return _pw_array_insert(array, index, &v); }
+[[nodiscard]] static inline bool _pw_array_insert_utf32   (PwValuePtr array, unsigned index, char32_t*       item) {  PwValue v = PwStringUtf32(item); return _pw_array_insert(array, index, &v); }
 
 
 /****************************************************************
@@ -150,20 +142,17 @@ extern "C" {
               char32_t: _pw_array_join_c32,    \
                    int: _pw_array_join_c32,    \
                  char*: _pw_array_join_ascii,  \
-              char8_t*: _pw_array_join_u8,     \
-             char32_t*: _pw_array_join_u32,    \
+              char8_t*: _pw_array_join_utf8,   \
+             char32_t*: _pw_array_join_utf32,  \
             PwValuePtr: _pw_array_join         \
     )((separator), (array), (result))
 
-[[nodiscard]] bool _pw_array_join_c32(char32_t   separator, PwValuePtr array, PwValuePtr result);
-[[nodiscard]] bool _pw_array_join_u8 (char8_t*   separator, PwValuePtr array, PwValuePtr result);
-[[nodiscard]] bool _pw_array_join_u32(char32_t*  separator, PwValuePtr array, PwValuePtr result);
-[[nodiscard]] bool _pw_array_join    (PwValuePtr separator, PwValuePtr array, PwValuePtr result);
+[[nodiscard]] bool _pw_array_join      (PwValuePtr separator, PwValuePtr array, PwValuePtr result);
+[[nodiscard]] bool _pw_array_join_c32  (char32_t   separator, PwValuePtr array, PwValuePtr result);
+[[nodiscard]] bool _pw_array_join_ascii(char*      separator, PwValuePtr array, PwValuePtr result);
+[[nodiscard]] bool _pw_array_join_utf8 (char8_t*   separator, PwValuePtr array, PwValuePtr result);
+[[nodiscard]] bool _pw_array_join_utf32(char32_t*  separator, PwValuePtr array, PwValuePtr result);
 
-[[nodiscard]] static inline bool _pw_array_join_ascii(char* separator, PwValuePtr array, PwValuePtr result)
-{
-    return _pw_array_join_u8((char8_t*) separator, array, result);
-}
 
 /****************************************************************
  * Get/set array items

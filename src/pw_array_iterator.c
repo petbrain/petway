@@ -5,7 +5,7 @@
 #include "src/pw_struct_internal.h"
 
 typedef struct {
-    _PwArray* array;  // cached pointer to array structure, also indicates that iteratioo is in progress
+    _PwArray* array;  // cached pointer to array structure, also indicates that iteration is in progress
     unsigned index;
     int increment;
     unsigned line_number;  // does not match index because line reader may skip non-strings
@@ -113,7 +113,7 @@ static PwInterface_LineReader line_reader_interface = {
  * ArrayIterator type
  */
 
-static void ari_fini(PwValuePtr self)
+static void array_iter_fini(PwValuePtr self)
 {
     // force stop iteration
     stop_iteration(self);
@@ -131,6 +131,6 @@ static void init_array_iterator_type()
             &array_iterator_type, "ArrayIterator", PwTypeId_Iterator, _PwArrayIterator,
             PwInterfaceId_LineReader, &line_reader_interface
         );
-        array_iterator_type.fini = ari_fini;
+        array_iterator_type.fini = array_iter_fini;
     }
 }

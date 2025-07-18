@@ -14,30 +14,21 @@
 extern "C" {
 #endif
 
-static inline uint8_t _pw_string_char_size(PwValuePtr s)
-/*
- * char_size is stored as 0-based whereas all
- * functions use 1-based values.
+/****************************************************************
+ * Basic functions
  */
-{
-    return s->str_char_size + 1;
-}
-
-static inline uint8_t pw_string_char_size(PwValuePtr str)
-{
-    pw_assert_string(str);
-    return _pw_string_char_size(str);
-}
 
 static inline uint8_t* _pw_string_start(PwValuePtr str)
 /*
  * Return pointer to the start of internal string data.
  */
 {
-    if (str->str_embedded) {
+    if (str->embedded) {
         return str->str_1;
-    } else {
+    } else if (str->allocated) {
         return str->string_data->data;
+    } else {
+        return str->char_ptr;
     }
 }
 
@@ -47,14 +38,20 @@ static inline uint8_t* _pw_string_start_end(PwValuePtr str, uint8_t** end)
  * and write final pointer to `end`.
  */
 {
-    if (str->str_embedded) {
-        *end = &str->str_1[str->str_embedded_length * _pw_string_char_size(str)];
-        return str->str_1;
+    uint8_t* start_ptr;
+    uint8_t char_size = str->char_size;
+    if (str->embedded) {
+        start_ptr = str->str_1;
+        *end = start_ptr + str->embedded_length * char_size;
+    } else if (str->allocated) {
+        start_ptr = str->string_data->data;
+        *end = start_ptr + str->length * char_size;
     } else {
-        _PwStringData* sdata = str->string_data;
-        *end = &sdata->data[str->str_length * _pw_string_char_size(str)];
-        return sdata->data;
+        // static string
+        start_ptr = str->char_ptr;
+        *end = start_ptr + str->length * char_size;
     }
+    return start_ptr;
 }
 
 static inline uint8_t* _pw_string_start_length(PwValuePtr str, unsigned* length)
@@ -63,33 +60,20 @@ static inline uint8_t* _pw_string_start_length(PwValuePtr str, unsigned* length)
  * and write length of string to `length`.
  */
 {
-   if (str->str_embedded) {
-        *length = str->str_embedded_length;
+   if (str->embedded) {
+        *length = str->embedded_length;
         return str->str_1;
-    } else {
-        *length = str->str_length;
+    } else if (str->allocated) {
+        *length = str->length;
         return str->string_data->data;
+    } else {
+        *length = str->length;
+        return str->char_ptr;
     }
 }
 
-static inline uint8_t* _pw_string_char_ptr(PwValuePtr str, unsigned position)
-/*
- * Return address of character in string at `position`.
- * If position is beyond end of line return nullptr.
- */
-{
-    unsigned offset = position * _pw_string_char_size(str);
-    if (str->str_embedded) {
-        if (position < str->str_embedded_length) {
-            return &str->str_1[offset];
-        }
-    } else {
-        if (position < str->str_length) {
-            return &str->string_data->data[offset];
-        }
-    }
-    return nullptr;
-}
+[[noreturn]]
+void _pw_panic_bad_char_size(uint8_t char_size);
 
 #define PW_CHAR_METHODS_IMPL(type_name)  \
     static inline char32_t _pw_get_char_##type_name(uint8_t* p)  \
@@ -131,61 +115,39 @@ static inline char32_t _pw_get_char(uint8_t* ptr, uint8_t char_size)
     }
 }
 
-static inline void _pw_put_char(uint8_t* ptr, char32_t chr, uint8_t char_size)
+static inline uint8_t* _pw_put_char(uint8_t* ptr, char32_t chr, uint8_t char_size)
 {
     switch (char_size) {
-        case 1: _pw_put_char_uint8_t(ptr, chr); return;
-        case 2: _pw_put_char_uint16_t(ptr, chr); return;
-        case 3: _pw_put_char_uint24_t(ptr, chr); return;
-        case 4: _pw_put_char_uint32_t(ptr, chr); return;
+        case 1: _pw_put_char_uint8_t(ptr, chr); break;
+        case 2: _pw_put_char_uint16_t(ptr, chr); break;
+        case 3: _pw_put_char_uint24_t(ptr, chr); break;
+        case 4: _pw_put_char_uint32_t(ptr, chr); break;
         default: _pw_panic_bad_char_size(char_size);
     }
+    return ptr + char_size;
 }
 
-static inline char32_t _pw_char_at(PwValuePtr str, unsigned position)
+char32_t pw_char_at(PwValuePtr str, unsigned position);
 /*
  * Return character at `position`.
  * If position is beyond end of line return 0.
  */
-{
-    uint8_t char_size = _pw_string_char_size(str);
-    unsigned offset = position * char_size;
-    if (str->str_embedded) {
-        if (position < str->str_embedded_length) {
-            return _pw_get_char(&str->str_1[offset], char_size);
-        }
-    } else {
-        if (position < str->str_length) {
-            return _pw_get_char(&str->string_data->data[offset], char_size);
-        }
-    }
-    return 0;
-}
-
-static inline char32_t pw_char_at(PwValuePtr str, unsigned position)
-{
-    pw_assert_string(str);
-    return _pw_char_at(str, position);
-}
 
 // check if `index` is within string length
 #define pw_string_index_valid(str, index) ((index) < pw_strlen(str))
 
-bool _pw_equal_u8 (PwValuePtr a, char8_t* b);
-bool _pw_equal_u32(PwValuePtr a, char32_t* b);
-
-unsigned pw_strlen(PwValuePtr str);
+static unsigned inline pw_strlen(PwValuePtr str)
 /*
  * Return length of string.
  */
-
-void pw_string_to_utf8_buf(PwValuePtr str, char* buffer);
-void pw_substr_to_utf8_buf(PwValuePtr str, unsigned start_pos, unsigned end_pos, char* buffer);
-/*
- * Copy string to buffer, appending terminating 0.
- * Use carefully. The caller is responsible to allocate the buffer.
- * Encode multibyte chars to UTF-8.
- */
+{
+    pw_assert_string(str);
+    if (str->embedded) {
+        return str->embedded_length;
+    } else {
+        return str->length;
+    }
+}
 
 [[nodiscard]] bool pw_substr(PwValuePtr str, unsigned start_pos, unsigned end_pos, PwValuePtr result);
 /*
@@ -220,73 +182,6 @@ bool pw_strchr(PwValuePtr str, char32_t chr, unsigned start_pos, unsigned* resul
 [[nodiscard]] bool pw_string_lower(PwValuePtr str);
 [[nodiscard]] bool pw_string_upper(PwValuePtr str);
 
-unsigned pw_strlen_in_utf8(PwValuePtr str);
-/*
- * Return length of str as if was encoded in UTF-8.
- * `str` can be either String or CharPtr.
- */
-
-char* pw_char32_to_utf8(char32_t codepoint, char* buffer);
-/*
- * Write up to 4 characters to buffer.
- * Return pointer to the next position in buffer.
- */
-
-void _pw_putchar32_utf8(FILE* fp, char32_t codepoint);
-
-unsigned utf8_strlen(char8_t* str);
-/*
- * Count the number of codepoints in UTF8-encoded string.
- */
-
-unsigned utf8_strlen2(char8_t* str, uint8_t* char_size);
-/*
- * Count the number of codepoints in UTF8-encoded string
- * and find max char size.
- */
-
-unsigned utf8_strlen2_buf(char8_t* buffer, unsigned* size, uint8_t* char_size);
-/*
- * Count the number of codepoints in the buffer and find max char size.
- *
- * Null characters are allowed! They are counted as zero codepoints.
- *
- * Return the number of codepoints.
- * Write the number of processed bytes back to `size`.
- * This number can be less than original `size` if buffer ends with
- * incomplete sequence.
- */
-
-char8_t* utf8_skip(char8_t* str, unsigned n);
-/*
- * Skip `n` characters, return pointer to `n`th char.
- */
-
-unsigned u32_strlen(char32_t* str);
-/*
- * Find length of null-terminated `str`.
- */
-
-unsigned u32_strlen2(char32_t* str, uint8_t* char_size);
-/*
- * Find both length of null-terminated `str` and max char size in one go.
- */
-
-int u32_strcmp   (char32_t* a, char32_t* b);
-int u32_strcmp_u8(char32_t* a, char8_t*  b);
-/*
- * Compare  null-terminated strings.
- */
-
-char32_t* u32_strchr(char32_t* str, char32_t chr);
-/*
- * Find the first occurrence of `chr` in the null-terminated `str`.
- */
-
-uint8_t u32_char_size(char32_t* str, unsigned max_len);
-/*
- * Find the maximal size of character in `str`, up to `max_len` or null terminator.
- */
 
 #ifdef PW_WITH_ICU
 #   define pw_char_lower(c)  u_tolower(c)
@@ -364,19 +259,15 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
 
 #define pw_create_string(initializer, result) _Generic((initializer),  \
                  char*: _pw_create_string_ascii, \
-              char8_t*: _pw_create_string_u8,    \
-             char32_t*: _pw_create_string_u32,   \
+              char8_t*: _pw_create_string_utf8,  \
+             char32_t*: _pw_create_string_utf32, \
             PwValuePtr: _pw_create_string        \
     )((initializer), (result))
 
-[[nodiscard]] bool _pw_create_string_u8 (char8_t*   initializer, PwValuePtr result);
-[[nodiscard]] bool _pw_create_string_u32(char32_t*  initializer, PwValuePtr result);
-[[nodiscard]] bool _pw_create_string    (PwValuePtr initializer, PwValuePtr result);
-
-[[nodiscard]] static inline bool _pw_create_string_ascii(char* initializer, PwValuePtr result)
-{
-    return _pw_create_string_u8((char8_t*) initializer, result);
-}
+[[nodiscard]] bool _pw_create_string_ascii(char*      initializer, PwValuePtr result);
+[[nodiscard]] bool _pw_create_string_utf8 (char8_t*   initializer, PwValuePtr result);
+[[nodiscard]] bool _pw_create_string_utf32(char32_t*  initializer, PwValuePtr result);
+[[nodiscard]] bool _pw_create_string      (PwValuePtr initializer, PwValuePtr result);
 
 [[nodiscard]] bool pw_create_empty_string(unsigned capacity, uint8_t char_size, PwValuePtr result);
 
@@ -388,29 +279,16 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
               char32_t: _pw_string_append_c32,    \
                    int: _pw_string_append_c32,    \
                  char*: _pw_string_append_ascii,  \
-              char8_t*: _pw_string_append_u8,     \
-             char32_t*: _pw_string_append_u32,    \
+              char8_t*: _pw_string_append_utf8,   \
+             char32_t*: _pw_string_append_utf32,  \
             PwValuePtr: _pw_string_append         \
     )((dest), (src))
 
-[[nodiscard]] bool _pw_string_append_c32(PwValuePtr dest, char32_t   c);
-[[nodiscard]] bool _pw_string_append_u8 (PwValuePtr dest, char8_t*   src);
-[[nodiscard]] bool _pw_string_append_u32(PwValuePtr dest, char32_t*  src);
-[[nodiscard]] bool _pw_string_append    (PwValuePtr dest, PwValuePtr src);
-
-[[nodiscard]] static inline bool _pw_string_append_ascii(PwValuePtr dest, char* src)
-{
-    return _pw_string_append_u8(dest, (char8_t*) src);
-}
-
-[[nodiscard]] bool pw_string_append_utf8(PwValuePtr dest, char8_t* buffer, unsigned size, unsigned* bytes_processed);
-/*
- * Append UTF-8-encoded characters from `buffer`.
- * Write the number of bytes processed to `bytes_processed`, which can be less
- * than `size` if buffer ends with incomplete UTF-8 sequence.
- *
- * Return false if out of memory.
- */
+[[nodiscard]] bool _pw_string_append_c32  (PwValuePtr dest, char32_t   c);
+[[nodiscard]] bool _pw_string_append_ascii(PwValuePtr dest, char*      src);
+[[nodiscard]] bool _pw_string_append_utf8 (PwValuePtr dest, char8_t*   src);
+[[nodiscard]] bool _pw_string_append_utf32(PwValuePtr dest, char32_t*  src);
+[[nodiscard]] bool _pw_string_append      (PwValuePtr dest, PwValuePtr src);
 
 [[nodiscard]] bool pw_string_append_buffer(PwValuePtr dest, uint8_t* buffer, unsigned size);
 /*
@@ -440,20 +318,16 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
 
 #define pw_string_append_substring(dest, src, src_start_pos, src_end_pos) _Generic((src), \
                  char*: _pw_string_append_substring_ascii,  \
-              char8_t*: _pw_string_append_substring_u8,     \
-             char32_t*: _pw_string_append_substring_u32,    \
+              char8_t*: _pw_string_append_substring_utf8,   \
+             char32_t*: _pw_string_append_substring_utf32,  \
             PwValuePtr: _pw_string_append_substring         \
     )((dest), (src), (src_start_pos), (src_end_pos))
 
-[[nodiscard]] bool _pw_string_append_substring_u8 (PwValuePtr dest, char8_t*   src, unsigned src_start_pos, unsigned src_end_pos);
-[[nodiscard]] bool _pw_string_append_substring_u32(PwValuePtr dest, char32_t*  src, unsigned src_start_pos, unsigned src_end_pos);
-[[nodiscard]] bool _pw_string_append_substring    (PwValuePtr dest, PwValuePtr src, unsigned src_start_pos, unsigned src_end_pos);
+[[nodiscard]] bool _pw_string_append_substring_ascii(PwValuePtr dest, char*      src, unsigned src_start_pos, unsigned src_end_pos);
+[[nodiscard]] bool _pw_string_append_substring_utf8 (PwValuePtr dest, char8_t*   src, unsigned src_start_pos, unsigned src_end_pos);
+[[nodiscard]] bool _pw_string_append_substring_utf32(PwValuePtr dest, char32_t*  src, unsigned src_start_pos, unsigned src_end_pos);
+[[nodiscard]] bool _pw_string_append_substring      (PwValuePtr dest, PwValuePtr src, unsigned src_start_pos, unsigned src_end_pos);
 
-[[nodiscard]] static inline bool
-_pw_string_append_substring_ascii(PwValuePtr dest, char* src, unsigned src_start_pos, unsigned src_end_pos)
-{
-    return _pw_string_append_substring_u8(dest, (char8_t*) src, src_start_pos, src_end_pos);
-}
 
 /****************************************************************
  * Substring comparison functions.
@@ -463,59 +337,47 @@ _pw_string_append_substring_ascii(PwValuePtr dest, char* src, unsigned src_start
 
 #define pw_substring_eq(a, start_pos, end_pos, b) _Generic((b), \
              char*: _pw_substring_eq_ascii,  \
-          char8_t*: _pw_substring_eq_u8,     \
-         char32_t*: _pw_substring_eq_u32,    \
+          char8_t*: _pw_substring_eq_utf8,   \
+         char32_t*: _pw_substring_eq_utf32,  \
         PwValuePtr: _pw_substring_eq         \
     )((a), (start_pos), (end_pos), (b))
 
-bool _pw_substring_eq_u8 (PwValuePtr a, unsigned start_pos, unsigned end_pos, char8_t*   b);
-bool _pw_substring_eq_u32(PwValuePtr a, unsigned start_pos, unsigned end_pos, char32_t*  b);
-bool _pw_substring_eq    (PwValuePtr a, unsigned start_pos, unsigned end_pos, PwValuePtr b);
-
-static inline bool _pw_substring_eq_ascii(PwValuePtr a, unsigned start_pos, unsigned end_pos, char* b)
-{
-    return _pw_substring_eq_u8(a, start_pos, end_pos, (char8_t*) b);
-}
+bool _pw_substring_eq_ascii(PwValuePtr a, unsigned start_pos, unsigned end_pos, char*      b);
+bool _pw_substring_eq_utf8 (PwValuePtr a, unsigned start_pos, unsigned end_pos, char8_t*   b);
+bool _pw_substring_eq_utf32(PwValuePtr a, unsigned start_pos, unsigned end_pos, char32_t*  b);
+bool _pw_substring_eq      (PwValuePtr a, unsigned start_pos, unsigned end_pos, PwValuePtr b);
 
 
 #define pw_startswith(str, prefix) _Generic((prefix), \
                int: _pw_startswith_c32,    \
           char32_t: _pw_startswith_c32,    \
              char*: _pw_startswith_ascii,  \
-          char8_t*: _pw_startswith_u8,     \
-         char32_t*: _pw_startswith_u32,    \
+          char8_t*: _pw_startswith_utf8,   \
+         char32_t*: _pw_startswith_utf32,  \
         PwValuePtr: _pw_startswith         \
     )((str), (prefix))
 
-bool _pw_startswith_c32(PwValuePtr str, char32_t   prefix);
-bool _pw_startswith_u8 (PwValuePtr str, char8_t*   prefix);
-bool _pw_startswith_u32(PwValuePtr str, char32_t*  prefix);
-bool _pw_startswith    (PwValuePtr str, PwValuePtr prefix);
-
-static inline bool _pw_startswith_ascii(PwValuePtr str, char* prefix)
-{
-    return _pw_startswith_u8(str, (char8_t*) prefix);
-}
+bool _pw_startswith_c32  (PwValuePtr str, char32_t   prefix);
+bool _pw_startswith_ascii(PwValuePtr str, char*      prefix);
+bool _pw_startswith_utf8 (PwValuePtr str, char8_t*   prefix);
+bool _pw_startswith_utf32(PwValuePtr str, char32_t*  prefix);
+bool _pw_startswith      (PwValuePtr str, PwValuePtr prefix);
 
 
 #define pw_endswith(str, suffix) _Generic((suffix), \
                int: _pw_endswith_c32,    \
           char32_t: _pw_endswith_c32,    \
              char*: _pw_endswith_ascii,  \
-          char8_t*: _pw_endswith_u8,     \
-         char32_t*: _pw_endswith_u32,    \
+          char8_t*: _pw_endswith_utf8,   \
+         char32_t*: _pw_endswith_utf32,  \
         PwValuePtr: _pw_endswith         \
     )((str), (suffix))
 
-bool _pw_endswith_c32(PwValuePtr str, char32_t   suffix);
-bool _pw_endswith_u8 (PwValuePtr str, char8_t*   suffix);
-bool _pw_endswith_u32(PwValuePtr str, char32_t*  suffix);
-bool _pw_endswith    (PwValuePtr str, PwValuePtr suffix);
-
-static inline bool _pw_endswith_ascii(PwValuePtr str, char* suffix)
-{
-    return _pw_endswith_u8(str, (char8_t*) suffix);
-}
+bool _pw_endswith_c32  (PwValuePtr str, char32_t   suffix);
+bool _pw_endswith_ascii(PwValuePtr str, char*      suffix);
+bool _pw_endswith_utf8 (PwValuePtr str, char8_t*   suffix);
+bool _pw_endswith_utf32(PwValuePtr str, char32_t*  suffix);
+bool _pw_endswith      (PwValuePtr str, PwValuePtr suffix);
 
 
 /****************************************************************
@@ -530,37 +392,135 @@ static inline bool _pw_endswith_ascii(PwValuePtr str, char* suffix)
 
 #define pw_string_split_any(str, splitters, maxsplit) _Generic((splitters),  \
                  char*: _pw_string_split_any_ascii,  \
-              char8_t*: _pw_string_split_any_u8,     \
-             char32_t*: _pw_string_split_any_u32,    \
+              char8_t*: _pw_string_split_any_utf8,   \
+             char32_t*: _pw_string_split_any_utf32,  \
             PwValuePtr: _pw_string_split_any         \
     )((str), (splitters), (maxsplit))
 
-[[nodiscard]] bool _pw_string_split_any_u8 (PwValuePtr str, char8_t*   splitters, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_any_u32(PwValuePtr str, char32_t*  splitters, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_any    (PwValuePtr str, PwValuePtr splitters, unsigned maxsplit, PwValuePtr result);
-
-[[nodiscard]] static inline bool _pw_string_split_any_ascii(PwValuePtr str, char* splitters, unsigned maxsplit, PwValuePtr result)
-{
-    return _pw_string_split_any_u8(str, (char8_t*) splitters, maxsplit, result);
-}
+[[nodiscard]] bool _pw_string_split_any_ascii(PwValuePtr str, char*      splitters, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_any_utf8 (PwValuePtr str, char8_t*   splitters, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_any_utf32(PwValuePtr str, char32_t*  splitters, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_any      (PwValuePtr str, PwValuePtr splitters, unsigned maxsplit, PwValuePtr result);
 
 #define pw_string_split_strict(str, splitter, maxsplit) _Generic((splitter),  \
               char32_t: _pw_string_split_c32,           \
                    int: _pw_string_split_c32,           \
                  char*: _pw_string_split_strict_ascii,  \
-              char8_t*: _pw_string_split_strict_u8,     \
-             char32_t*: _pw_string_split_strict_u32,    \
+              char8_t*: _pw_string_split_strict_utf8,   \
+             char32_t*: _pw_string_split_strict_utf32,  \
             PwValuePtr: _pw_string_split_strict         \
     )((str), (splitter), (maxsplit))
 
-[[nodiscard]] bool _pw_string_split_strict_u8 (PwValuePtr str, char8_t*   splitter, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_strict_u32(PwValuePtr str, char32_t*  splitter, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_strict    (PwValuePtr str, PwValuePtr splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_strict_ascii(PwValuePtr str, char*      splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_strict_utf8 (PwValuePtr str, char8_t*   splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_strict_utf32(PwValuePtr str, char32_t*  splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_strict      (PwValuePtr str, PwValuePtr splitter, unsigned maxsplit, PwValuePtr result);
 
-[[nodiscard]] static inline bool _pw_string_split_strict_ascii(PwValuePtr str, char* splitter, unsigned maxsplit, PwValuePtr result)
-{
-    return _pw_string_split_strict_u8(str, (char8_t*) splitter, maxsplit, result);
-}
+
+/****************************************************************
+ * Low level string iterator.
+ *
+ * The algorithm is implemented as macros and local variables
+ * instead of functions and structures to give the compiler
+ * more optimization freedom.
+ *
+ * How to use:
+ *
+ * PwStringPtr str = whatever;
+ * PW_STRING_ITER(src, str)
+ * while (!PW_STRING_ITER_DONE(src)) {
+ *     char32_t chr = PW_STRING_ITER_NEXT(src);
+ *     // ...
+ * }
+ */
+
+#define PW_STRING_ITER_DONE(name)  \
+    (_char_ptr_##name == _end_ptr_##name)
+
+#define PW_STRING_ITER_GETCHAR(name)  \
+    _pw_get_char(_char_ptr_##name, _char_size_##name)
+
+#define PW_STRING_ITER_PUTCHAR(name, chr)  \
+    _pw_put_char(_char_ptr_##name, (chr), _char_size_##name)
+
+#define PW_STRING_ITER_CHARPTR(name)  \
+    _char_ptr_##name
+
+#define PW_STRING_ITER_ENDPTR(name)  \
+    _end_ptr_##name
+
+#define PW_STRING_ITER_INC(name);  \
+    do {  \
+        _char_ptr_##name += _char_size_##name;  \
+        if (_pw_unlikely(_char_ptr_##name > _end_ptr_##name)) {  \
+            fprintf(stderr, "PW_STRING_ITER_NEXT %s:%d char_ptr went above end_ptr\n", __FILE__, __LINE__);  \
+            _char_ptr_##name = _end_ptr_##name;  \
+        }  \
+    } while (false)
+
+#define PW_STRING_ITER_DEC(name);  \
+        _char_ptr_##name -= _char_size_##name;  \
+        if (_pw_unlikely(_char_ptr_##name < _end_ptr_##name)) {  \
+            fprintf(stderr, "PW_STRING_ITER_PREV %s:%d char_ptr went below end_ptr\n", __FILE__, __LINE__);  \
+            _char_ptr_##name = _end_ptr_##name;  \
+        }  \
+
+#define PW_STRING_ITER_NEXT(name)  \
+    ({  \
+        char32_t chr = PW_STRING_ITER_GETCHAR(name);  \
+        PW_STRING_ITER_INC(name);  \
+        chr;  \
+    })
+
+#define PW_STRING_ITER_PREV(name)  \
+    ({  \
+        PW_STRING_ITER_DEC(name);  \
+        PW_STRING_ITER_GETCHAR(name);  \
+    })
+
+#define PW_STRING_ITER_RESET(name, s)  \
+    do {  \
+        _char_size_##name = (s)->char_size;  \
+        _char_ptr_##name = _pw_string_start_end((s), &_end_ptr_##name);  \
+    } while (false)
+
+#define PW_STRING_ITER(name, s)  \
+    /* Init forward string iterator */  \
+    uint8_t _char_size_##name;  \
+    uint8_t* _char_ptr_##name;  \
+    uint8_t* _end_ptr_##name;  \
+    PW_STRING_ITER_RESET(name, (s))
+
+#define PW_STRING_ITER_RESET_FROM(name, s, start_index)  \
+    do {  \
+        _char_size_##name = (s)->char_size;  \
+        _char_ptr_##name = _pw_string_start_end((s), &_end_ptr_##name);  \
+        _char_ptr_##name += (start_index) * _char_size_##name;  \
+        if (_char_ptr_##name > _end_ptr_##name) {  \
+            /* start_index too big */  \
+            _char_ptr_##name = _end_ptr_##name;  \
+        }  \
+    } while (false)
+
+#define PW_STRING_ITER_FROM(name, s, start_index)  \
+    /* Init forward string iterator from start_index */  \
+    uint8_t _char_size_##name;  \
+    uint8_t* _char_ptr_##name;  \
+    uint8_t* _end_ptr_##name;  \
+    PW_STRING_ITER_RESET_FROM(name, (s), (start_index))
+
+#define PW_STRING_ITER_RESET_REVERSE(name, s)  \
+    do {  \
+        _char_size_##name = (s)->char_size;  \
+        _end_ptr_##name = _pw_string_start_end((s), &_char_ptr_##name);  \
+    } while (false)
+
+#define PW_STRING_ITER_REVERSE(name, s)  \
+    /* Init reverse string iterator */  \
+    uint8_t _char_size_##name = (s)->char_size;  \
+    uint8_t* _char_ptr_##name;  \
+    uint8_t* _end_ptr_##name; \
+    PW_STRING_ITER_RESET_REVERSE(name, (s));
 
 
 /****************************************************************
@@ -576,6 +536,11 @@ typedef char* CStringPtr;
 #define PW_CSTRING_LOCAL(variable_name, pw_str) \
     char variable_name[pw_strlen_in_utf8(pw_str) + 1]; \
     pw_string_to_utf8_buf((pw_str), variable_name)
+
+unsigned pw_strlen_in_utf8(PwValuePtr str);
+/*
+ * Return length of str as if was encoded in UTF-8.
+ */
 
 CStringPtr pw_string_to_utf8(PwValuePtr str);
 /*

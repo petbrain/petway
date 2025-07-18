@@ -1,12 +1,11 @@
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <libpussy/dump.h>
 
 #include "include/pw.h"
+#include "include/pw_utf.h"
 #include "src/pw_alloc.h"
-#include "src/pw_charptr_internal.h"
 #include "src/pw_string_internal.h"
 
 [[noreturn]]
@@ -25,6 +24,72 @@ static unsigned _max_capacity[4] = {
     (0xFFFF'FFFF - _header_size) / 3,
     (0xFFFF'FFFF - _header_size) / 4
 };
+
+static inline void _pw_string_set_length(PwValuePtr s, unsigned length)
+{
+    if (s->embedded) {
+        s->embedded_length = length;
+    } else if (s->allocated) {
+        s->length = length;
+    } else {
+        pw_panic("Cannot set length for static string\n");
+    }
+}
+
+static inline unsigned _pw_string_inc_length(PwValuePtr s, unsigned increment)
+/*
+ * Increment length, return previous value.
+ */
+{
+    unsigned length;
+    if (s->embedded) {
+        length = s->embedded_length;
+        s->embedded_length = length + increment;
+    } else if (s->allocated) {
+        length = s->length;
+        s->length = length + increment;
+    } else {
+        pw_panic("Cannot increase length of static string\n");
+    }
+    return length;
+}
+
+/****************************************************************
+ * Methods that depend on char_size field.
+ */
+
+typedef void     (*Hash)(uint8_t* self_ptr, unsigned length, PwHashContext* ctx);
+typedef uint8_t  (*MaxCharSize)(uint8_t* self_ptr, unsigned length);
+typedef bool     (*Equal)(uint8_t* self_ptr, PwValuePtr other, unsigned other_start_pos, unsigned length);
+typedef bool     (*EqualAscii)(uint8_t* self_ptr, char* other, unsigned length);
+typedef bool     (*EqualUtf8)(uint8_t* self_ptr, char8_t* other, unsigned length);
+typedef bool     (*EqualUtf32)(uint8_t* self_ptr, char32_t* other, unsigned length);
+typedef void     (*CopyTo)(uint8_t* self_ptr, PwValuePtr dest, unsigned dest_start_pos, unsigned length);
+typedef void     (*CopyToUtf8)(uint8_t* self_ptr, char* dest_ptr, unsigned length);
+typedef unsigned (*CopyFromAscii)(uint8_t* self_ptr, char* src_ptr, unsigned length);
+typedef unsigned (*CopyFromUtf8)(uint8_t* self_ptr, char8_t* src_ptr, unsigned length);
+typedef unsigned (*CopyFromUtf32)(uint8_t* self_ptr, char32_t* src_ptr, unsigned length);
+
+typedef struct {
+    Hash          hash;
+    MaxCharSize   max_char_size;
+    Equal         equal;
+    EqualAscii    equal_ascii;
+    EqualUtf8     equal_utf8;
+    EqualUtf32    equal_utf32;
+    CopyTo        copy_to;
+    CopyToUtf8    copy_to_utf8;
+    CopyFromAscii copy_from_ascii;
+    CopyFromUtf8  copy_from_utf8;
+    CopyFromUtf32 copy_from_utf32;
+} StrMethods;
+
+extern StrMethods _pws_str_methods[5];
+
+static inline StrMethods* get_str_methods(PwValuePtr s)
+{
+    return &_pws_str_methods[s->char_size];
+}
 
 /****************************************************************
  * Basic functions
@@ -48,7 +113,7 @@ static inline unsigned get_string_data_size(PwValuePtr str)
  * Get memory size occupied by string data.
  */
 {
-    return calc_string_data_size(_pw_string_char_size(str), _pw_string_capacity(str), nullptr);
+    return calc_string_data_size(str->char_size, _pw_string_capacity(str), nullptr);
 }
 
 static void string_destroy(PwValuePtr self)
@@ -56,7 +121,7 @@ static void string_destroy(PwValuePtr self)
  * Basic interface method
  */
 {
-    if (!self->str_embedded) {
+    if (self->allocated) {
         if (0 == --self->string_data->refcount) {
             _pw_free(self->type_id, (void**) &self->string_data, get_string_data_size(self));
         }
@@ -69,15 +134,18 @@ static void string_destroy(PwValuePtr self)
  * `type_id` is important for allocator selection.
  */
 {
+    pw_assert(1 <= char_size && char_size <= 4);
+
     pw_destroy(result);
     result->type_id = type_id;
-    result->str_char_size = char_size - 1;  // char_size is stored as 0-based
+    result->char_size = char_size;
 
     // check if string can be embedded into result
 
-    if (capacity <= embedded_capacity[char_size - 1]) {
-        result->str_embedded = 1;
-        result->str_embedded_length = 0;
+    if (capacity <= embedded_capacity[char_size]) {
+        result->allocated = 0;
+        result->embedded = 1;
+        result->embedded_length = 0;
         result->str_4[0] = 0;
         result->str_4[1] = 0;
         result->str_4[2] = 0;
@@ -88,8 +156,8 @@ static void string_destroy(PwValuePtr self)
         return false;
     }
 
-    result->str_embedded = 0;
-    result->str_length = 0;
+    result->embedded = 0;
+    result->length = 0;
 
     // allocate string
 
@@ -103,29 +171,50 @@ static void string_destroy(PwValuePtr self)
     string_data->refcount = 1;
     string_data->capacity = real_capacity;
     result->string_data = string_data;
+    result->embedded = 0;
+    result->allocated = 1;
     return true;
 }
 
-[[ nodiscard]] static bool _do_copy_on_write(PwValuePtr str)
+[[ nodiscard]] static inline bool need_copy_on_write(PwValuePtr str)
+{
+    if (str->embedded) {
+        return false;
+    }
+    if (str->allocated) {
+        _PwStringData* sdata = str->string_data;
+        return sdata->refcount > 1;
+    }
+    // static string needs to be copied
+    return true;
+}
+
+[[ nodiscard]] static bool do_copy_on_write(PwValuePtr str)
 /*
  * non-inline helper for copy_on_write
  */
 {
-    _PwStringData* orig_sdata = str->string_data;
-    unsigned length = str->str_length;
-    uint8_t char_size = _pw_string_char_size(str);
+    unsigned length = str->length;
+    uint8_t char_size = str->char_size;
 
     // allocate string
-    _PwValue s = PW_NULL;
+    PwValue s = PW_NULL;
     if (!make_empty_string(str->type_id, length, char_size, &s)) {
         return false;
     }
-    orig_sdata->refcount--;  // cannot drop to zero here, its value is ensured > 1 in copy_on_write
+    uint8_t* char_ptr;
+    if (str->allocated) {
+        _PwStringData* orig_sdata = str->string_data;
+        char_ptr = orig_sdata->data;
+    } else {
+        // static string here, embedded case is filtered out by need_copy_on_write
+        char_ptr = str->char_ptr;
+    }
     // copy original string to new string;
     // new string can be embedded, use _pw_string_start
-    memcpy(_pw_string_start(&s), orig_sdata->data, length * char_size);
+    memcpy(_pw_string_start(&s), char_ptr, length * char_size);
     _pw_string_set_length(&s, length);
-    *str = s;
+    pw_move(&s, str);
     return true;
 }
 
@@ -139,12 +228,8 @@ static void string_destroy(PwValuePtr self)
  * without expanding or increasing char size.
  */
 {
-    if (str->str_embedded) {
-        return true;
-    }
-    _PwStringData* sdata = str->string_data;
-    if (sdata->refcount > 1) {
-        return _do_copy_on_write(str);
+    if (need_copy_on_write(str)) {
+        return do_copy_on_write(str);
     }
     return true;
 }
@@ -154,42 +239,43 @@ static void string_destroy(PwValuePtr self)
  * non-inline helper for expand_string
  */
 {
-    uint8_t char_size = _pw_string_char_size(str);
+    uint8_t char_size = str->char_size;
 
-    if (str->str_embedded) {
+    if (str->embedded) {
         if (new_char_size < char_size) {
             // current char_size is greater than new one, use current as new:
             new_char_size = char_size;
         }
-        if (increment > _max_capacity[new_char_size] - str->str_embedded_length) {
+        if (increment > _max_capacity[new_char_size] - str->embedded_length) {
+            pw_set_status(PwStatus(PW_ERROR_STRING_TOO_LONG));
             return false;
         }
-        unsigned new_length = str->str_embedded_length + increment;
-        if (new_length <= embedded_capacity[new_char_size - 1]) {
+        unsigned new_length = str->embedded_length + increment;
+        if (new_length <= embedded_capacity[new_char_size]) {
             // no need to expand
             if (new_char_size > char_size) {
                 // but need to make existing chars wider
                 _PwValue orig_str = *str;
-                str->str_char_size = new_char_size - 1;  // char_size is stored as 0-based
+                str->char_size = new_char_size;
                 get_str_methods(&orig_str)->copy_to(
                     _pw_string_start(&orig_str),
-                    str, 0, orig_str.str_embedded_length
+                    str, 0, orig_str.embedded_length
                 );
             }
             return true;
         }
         // go copy
 
-    } else if (str->string_data->refcount == 1 && new_char_size <= char_size) {
+    } else if (str->allocated && str->string_data->refcount == 1 && new_char_size <= char_size) {
 
-        // expand string inplace
+        // expand string in-place
 
-        uint8_t char_size = _pw_string_char_size(str);
+        uint8_t char_size = str->char_size;
 
-        if (increment > _max_capacity[char_size] - str->str_length) {
+        if (increment > _max_capacity[char_size] - str->length) {
             return false;
         }
-        unsigned new_capacity = str->str_length + increment;
+        unsigned new_capacity = str->length + increment;
         if (new_capacity <= str->string_data->capacity) {
             // no need to expand
             return true;
@@ -204,7 +290,7 @@ static void string_destroy(PwValuePtr self)
     // make a copy before modification of shared string data
 
     _PwValue orig_str = *str;
-    unsigned length = _pw_string_length(str);
+    unsigned length = pw_strlen(str);
     unsigned capacity = _pw_string_capacity(str);
 
     if (increment > _max_capacity[new_char_size] - length) {
@@ -228,7 +314,7 @@ static void string_destroy(PwValuePtr self)
     }
     // copy original string to new string
     get_str_methods(&orig_str)->copy_to(_pw_string_start(&orig_str), str, 0, length);
-    str->str_length = length;
+    str->length = length;
 
     string_destroy(&orig_str);
 
@@ -247,14 +333,14 @@ static void string_destroy(PwValuePtr self)
 
     // quick check if we should not do anything
 
-    uint8_t char_size = _pw_string_char_size(str);
+    uint8_t char_size = str->char_size;
     if (new_char_size <= char_size) {
-        if (str->str_embedded) {
-            if (str->str_embedded_length + increment <= embedded_capacity[char_size - 1]) {
+        if (str->embedded) {
+            if (str->embedded_length + increment <= embedded_capacity[char_size]) {
                 return true;
             }
-        } else {
-            if (str->str_length + increment <= str->string_data->capacity) {
+        } else if (str->allocated) {
+            if (str->length + increment <= str->string_data->capacity) {
                 return true;
             }
         }
@@ -271,21 +357,21 @@ static void string_destroy(PwValuePtr self)
     // XXX use ctor_args for initializer?
 
     pw_destroy(result);
-    *result = PwString(0, {});
+    *result = PwString("");
     return true;
 }
 
 static void string_clone(PwValuePtr self)
 {
-    if (!self->str_embedded) {
+    if (self->allocated) {
         self->string_data->refcount++;
     }
 }
 
 [[nodiscard]] static bool string_deepcopy(PwValuePtr self, PwValuePtr result)
 {
-    unsigned length = _pw_string_length(self);
-    if (!make_empty_string(self->type_id, length, _pw_string_char_size(self), result)) {
+    unsigned length = pw_strlen(self);
+    if (!make_empty_string(self->type_id, length, self->char_size, result)) {
         return false;
     }
     get_str_methods(self)->copy_to(_pw_string_start(self), result, 0, length);
@@ -298,9 +384,10 @@ static void string_hash(PwValuePtr self, PwHashContext* ctx)
     // mind maps: the hash should be the same for subtypes, that's why not using self->type_id here
     _pw_hash_uint64(ctx, PwTypeId_String);
 
-    unsigned length = _pw_string_length(self);
+    unsigned length;
+    uint8_t* char_ptr = _pw_string_start_length(self, &length);
     if (length) {
-        get_str_methods(self)->hash(_pw_string_start(self), length, ctx);
+        get_str_methods(self)->hash(char_ptr, length, ctx);
     }
 }
 
@@ -312,17 +399,19 @@ static void string_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
 
 void _pw_string_dump_data(FILE* fp, PwValuePtr str, int indent)
 {
-    if (str->str_embedded) {
+    if (str->embedded) {
         fprintf(fp, " embedded,");
-    } else {
+    } else if (str->allocated) {
         fprintf(fp, " data=%p, refcount=%u, data size=%u, ptr=%p",
                 str->string_data, str->string_data->refcount,
                 get_string_data_size(str), _pw_string_start(str));
+    } else {
+        fprintf(fp, " static,");
     }
 
     unsigned capacity = _pw_string_capacity(str);
-    unsigned length = _pw_string_length(str);
-    uint8_t char_size = _pw_string_char_size(str);
+    unsigned length = pw_strlen(str);
+    uint8_t char_size = str->char_size;
 
     fprintf(fp, " length=%u, capacity=%u, char size=%u\n", length, capacity, char_size);
     indent += 4;
@@ -355,7 +444,7 @@ void _pw_string_dump_data(FILE* fp, PwValuePtr str, int indent)
 
 [[nodiscard]] static bool string_is_true(PwValuePtr self)
 {
-    return _pw_string_length(self);
+    return pw_strlen(self);
 }
 
 [[nodiscard]] static inline bool _pw_string_eq(PwValuePtr a, PwValuePtr b)
@@ -363,8 +452,8 @@ void _pw_string_dump_data(FILE* fp, PwValuePtr str, int indent)
     if (a == b) {
         return true;
     }
-    unsigned a_length = _pw_string_length(a);
-    unsigned b_length = _pw_string_length(b);
+    unsigned a_length = pw_strlen(a);
+    unsigned b_length = pw_strlen(b);
     if (a_length != b_length) {
         return false;
     }
@@ -383,20 +472,13 @@ void _pw_string_dump_data(FILE* fp, PwValuePtr str, int indent)
 {
     PwTypeId t = other->type_id;
     for (;;) {
-        switch (t) {
-            case PwTypeId_String:
-                return _pw_string_eq(self, other);
-
-            case PwTypeId_CharPtr:
-                return _pw_charptr_equal_string(other, self);
-
-            default: {
-                // check base type
-                t = _pw_types[t]->ancestor_id;
-                if (t == PwTypeId_Null) {
-                    return false;
-                }
-            }
+        if (t == PwTypeId_String) {
+            return _pw_string_eq(self, other);
+        }
+        // check base type
+        t = _pw_types[t]->ancestor_id;
+        if (t == PwTypeId_Null) {
+            return false;
         }
     }
 }
@@ -411,11 +493,28 @@ void _pw_string_dump_data(FILE* fp, PwValuePtr str, int indent)
  * `bytes_written` will be less than `size` and return value will be PW_ERROR_INCOMPLETE_UTF8.
  */
 {
-    if (!pw_string_append_utf8(self, data, size, bytes_written)) {
+    if (size == 0) {
         *bytes_written = 0;
-        return false;
+        return true;
     }
-    if (*bytes_written != size) {
+    unsigned bytes_processed;
+    uint8_t src_char_size;
+    unsigned src_len = utf8_strlen2_buf(data, &bytes_processed, &src_char_size);
+
+    if (src_len) {
+        if (!expand_string(self, src_len, src_char_size)) {
+            *bytes_written = 0;
+            return false;
+        }
+        unsigned length = _pw_string_inc_length(self, src_len);
+        get_str_methods(self)->copy_from_utf8(
+            _pw_string_start(self) + length * self->char_size,
+            data,
+            src_len
+        );
+    }
+    *bytes_written = bytes_processed;
+    if (bytes_processed != size) {
         pw_set_status(PwStatus(PW_ERROR_INCOMPLETE_UTF8));
         return false;
     }
@@ -466,258 +565,6 @@ PwType _pw_string_type = {
     .num_interfaces = PW_LENGTH(string_interfaces),
     .interfaces     = string_interfaces
 };
-
-/****************************************************************
- * UTF-8/UTF-32 functions
- */
-
-char* pw_char32_to_utf8(char32_t codepoint, char* buffer)
-{
-    /*
-     * U+0000 - U+007F      0xxxxxxx
-     * U+0080 - U+07FF      110xxxxx  10xxxxxx
-     * U+0800 - U+FFFF      1110xxxx  10xxxxxx  10xxxxxx
-     * U+010000 - U+10FFFF  11110xxx  10xxxxxx  10xxxxxx  10xxxxxx
-     */
-    if (codepoint < 0x80) {
-        *buffer++ = (char) codepoint;
-        return buffer;
-    }
-    if (codepoint < 0b1'00000'000000) {
-        *buffer++ = (char) (0xC0 | (codepoint >> 6));
-        *buffer++ = (char) (0x80 | (codepoint & 0x3F));
-        return buffer;
-    }
-    if (codepoint < 0b1'0000'000000'000000) {
-        *buffer++ = (char) (0xE0 | (codepoint >> 12));
-        *buffer++ = (char) (0x80 | ((codepoint >> 6) & 0x3F));
-        *buffer++ = (char) (0x80 | (codepoint & 0x3F));
-        return buffer;
-    }
-    *buffer++ = (char) (0xF0 | ((codepoint >> 18) & 0x07));
-    *buffer++ = (char) (0x80 | ((codepoint >> 12) & 0x3F));
-    *buffer++ = (char) (0x80 | ((codepoint >> 6) & 0x3F));
-    *buffer++ = (char) (0x80 | (codepoint & 0x3F));
-    return buffer;
-}
-
-unsigned utf8_strlen(char8_t* str)
-{
-    unsigned length = 0;
-    while(*str != 0) {
-        char32_t c = read_utf8_char(&str);
-        if (c != 0xFFFFFFFF) {
-            length++;
-        }
-    }
-    return length;
-}
-
-unsigned utf8_strlen2(char8_t* str, uint8_t* char_size)
-{
-    unsigned length = 0;
-    uint8_t  width = 0;
-    while(*str != 0) {
-        char32_t c = read_utf8_char(&str);
-        if (c != 0xFFFFFFFF) {
-            width = update_char_width(width, c);
-            length++;
-        }
-    }
-    *char_size = char_width_to_char_size(width);
-    return length;
-}
-
-unsigned utf8_strlen2_buf(char8_t* buffer, unsigned* size, uint8_t* char_size)
-{
-    char8_t* ptr = buffer;
-    unsigned bytes_remaining = *size;
-    unsigned length = 0;
-    uint8_t  width = 0;
-
-    while (bytes_remaining) {
-        char32_t c;
-        if (!read_utf8_buffer(&ptr, &bytes_remaining, &c)) {
-            break;
-        }
-        if (c != 0xFFFFFFFF) {
-            width = update_char_width(width, c);
-            length++;
-        }
-    }
-    *size -= bytes_remaining;
-
-    if (char_size) {
-        *char_size = char_width_to_char_size(width);
-    }
-
-    return length;
-}
-
-uint8_t utf8_char_size(char8_t* str, unsigned max_len)
-{
-    uint8_t width = 0;
-    while(*str != 0) {
-        char32_t c = read_utf8_char(&str);
-        if (c != 0xFFFFFFFF) {
-            width = update_char_width(width, c);
-        }
-    }
-    return char_width_to_char_size(width);
-}
-
-char8_t* utf8_skip(char8_t* str, unsigned n)
-{
-    while(n--) {
-        read_utf8_char(&str);
-        if (*str == 0) {
-            break;
-        }
-    }
-    return str;
-}
-
-unsigned pw_strlen_in_utf8(PwValuePtr str)
-{
-#   define INCREMENT_LENGTH  \
-        if (c < 0x80) {  \
-            length++;  \
-        } else if (c < 0b1'00000'000000) {  \
-            length += 2;  \
-        } else if (c < 0b1'0000'000000'000000) {  \
-            length += 3;  \
-        } else {  \
-            length += 4;  \
-        }
-
-    unsigned length = 0;
-
-    if (pw_is_charptr(str)) {
-        switch (str->charptr_subtype) {
-            case PwSubType_CharPtr:
-                length = strlen((char*) str->charptr);
-                break;
-            case PwSubType_Char32Ptr: {
-                char32_t* ptr = str->char32ptr;
-                for (;;) {
-                    char32_t c = *ptr++;
-                    if (c == 0) {
-                        break;
-                    }
-                    INCREMENT_LENGTH
-                }
-                break;
-            }
-            default:
-                _pw_panic_bad_charptr_subtype(str);
-        }
-    } else {
-        pw_assert_string(str);
-        uint8_t char_size = _pw_string_char_size(str);
-        unsigned n;
-        uint8_t* ptr = _pw_string_start_length(str, &n);
-        while (n) {
-            char32_t c = _pw_get_char(ptr, char_size);
-            INCREMENT_LENGTH
-            ptr += char_size;
-            n--;
-        }
-    }
-    return length;
-
-#   undef INCREMENT_LENGTH
-}
-
-void _pw_putchar32_utf8(FILE* fp, char32_t codepoint)
-{
-    char buffer[5];
-    char* start = buffer;
-    char* end = pw_char32_to_utf8(codepoint, buffer);
-    while (start < end) {
-        fputc(*start++, fp);
-    }
-}
-
-unsigned u32_strlen(char32_t* str)
-{
-    unsigned length = 0;
-    while (*str++) {
-        length++;
-    }
-    return length;
-}
-
-unsigned u32_strlen2(char32_t* str, uint8_t* char_size)
-{
-    unsigned length = 0;
-    uint8_t width = 0;
-    char32_t c;
-    while ((c = *str++) != 0) {
-        width = update_char_width(width, c);
-        length++;
-    }
-    *char_size = char_width_to_char_size(width);
-    return length;
-}
-
-int u32_strcmp(char32_t* a, char32_t* b)
-{
-    if (a == b) {
-        return 0;
-    }
-    for (;;) {
-        char32_t ca = *a++;
-        char32_t cb = *b++;
-        if (ca < cb) {
-            return -1;
-        } else if (ca > cb) {
-            return 1;
-        } else if (ca == 0) {
-            return 0;
-        }
-    }
-}
-
-int u32_strcmp_u8(char32_t* a, char8_t* b)
-{
-    for (;;) {
-        char32_t ca = *a++;
-        char32_t cb = read_utf8_char(&b);
-        if (ca < cb) {
-            return -1;
-        } else if (ca > cb) {
-            return 1;
-        } else if (ca == 0) {
-            return 0;
-        }
-    }
-}
-
-char32_t* u32_strchr(char32_t* str, char32_t chr)
-{
-    char32_t c;
-    while ((c = *str) != 0) {
-        if (c == chr) {
-            return str;
-        }
-        str++;
-    }
-    return nullptr;
-}
-
-uint8_t u32_char_size(char32_t* str, unsigned max_len)
-{
-    uint8_t width = 0;
-    while (max_len--) {
-        char32_t c = *str++;
-        if (c == 0) {
-            break;
-        }
-        width = update_char_width(width, c);
-    }
-    return char_width_to_char_size(width);
-}
-
 
 /****************************************************************
  * Methods that depend on char_size field.
@@ -920,7 +767,7 @@ STR_EQ_O24_HELPER_IMPL(uint32_t)
 #define STR_EQ_IMPL(type_name_self)  \
     static bool _eq_##type_name_self(uint8_t* self_ptr, PwValuePtr other, unsigned other_start_pos, unsigned length)  \
     {  \
-        uint8_t char_size = _pw_string_char_size(other);  \
+        uint8_t char_size = other->char_size;  \
         uint8_t* other_ptr = _pw_string_start(other) + other_start_pos * char_size;  \
         switch (char_size) {  \
             case 1: return eq_##type_name_self##_uint8_t(self_ptr, (uint8_t*) other_ptr, length);  \
@@ -936,9 +783,48 @@ STR_EQ_IMPL(uint16_t)
 STR_EQ_IMPL(uint24_t)
 STR_EQ_IMPL(uint32_t)
 
-// comparison with har32_t null-terminated string, integral `self` types
+// comparison with ascii null-terminated string, integral `self` types
 
-#define STR_EQ_U32_IMPL(type_name_self)  \
+#define STR_EQ_ASCII_IMPL(type_name_self)  \
+    static bool _eq_##type_name_self##_ascii(uint8_t* self_ptr, char* other, unsigned length)  \
+    {  \
+        type_name_self* this_ptr = (type_name_self*) self_ptr;  \
+        while (length--) {  \
+            uint8_t c = (uint8_t) (*other++);  \
+            if (c == 0) {  \
+                return false;  \
+            }  \
+            if (*this_ptr++ != c) {  \
+                return false;  \
+            }  \
+        }  \
+        return *other == 0;  \
+    }
+
+STR_EQ_ASCII_IMPL(uint8_t)
+STR_EQ_ASCII_IMPL(uint16_t)
+STR_EQ_ASCII_IMPL(uint32_t)
+
+// comparison with ascii null-terminated string, uint24 self type
+
+static bool _eq_uint24_t_ascii(uint8_t* self_ptr, char* other, unsigned length)
+{
+    while (length--) {
+        uint8_t c = (uint8_t) (*other++);
+        if (c == 0) {
+            return false;
+        }
+        if (_pw_get_char_uint24_t(self_ptr) != c) {
+            return false;
+        }
+        self_ptr += 3;
+    }
+    return *other == 0;
+}
+
+// comparison with char32_t null-terminated string, integral `self` types
+
+#define STR_EQ_UTF32_IMPL(type_name_self)  \
     static bool _eq_##type_name_self##_char32_t(uint8_t* self_ptr, char32_t* other, unsigned length)  \
     {  \
         type_name_self* this_ptr = (type_name_self*) self_ptr;  \
@@ -954,9 +840,9 @@ STR_EQ_IMPL(uint32_t)
         return *other == 0;  \
     }
 
-STR_EQ_U32_IMPL(uint8_t)
-STR_EQ_U32_IMPL(uint16_t)
-STR_EQ_U32_IMPL(uint32_t)
+STR_EQ_UTF32_IMPL(uint8_t)
+STR_EQ_UTF32_IMPL(uint16_t)
+STR_EQ_UTF32_IMPL(uint32_t)
 
 // comparison with char32_t null-terminated string, uint24 self type
 
@@ -987,7 +873,7 @@ static bool _eq_uint24_t_char32_t(uint8_t* self_ptr, char32_t* other, unsigned l
             if (*other == 0) {  \
                 return false;  \
             }  \
-            char32_t codepoint = read_utf8_char(&other);  \
+            char32_t codepoint = _pw_decode_utf8_char(&other);  \
             if (check_invalid_codepoint) { \
                 if (codepoint == 0xFFFFFFFF) {  \
                     return false;  \
@@ -1010,7 +896,7 @@ static bool _eq_uint24_t_char8_t(uint8_t* self_ptr, char8_t* other, unsigned len
         if (*other == 0) {
             return false;
         }
-        char32_t codepoint = read_utf8_char(&other);
+        char32_t codepoint = _pw_decode_utf8_char(&other);
         if (_pw_get_char_uint24_t(self_ptr) != codepoint) {
             return false;
         }
@@ -1094,7 +980,7 @@ STR_COPY_TO_D24_HELPER_IMPL(uint32_t)
 #define STR_COPY_TO_IMPL(type_name_self)  \
     static void _cp_to_##type_name_self(uint8_t* self_ptr, PwValuePtr dest, unsigned dest_start_pos, unsigned length)  \
     {  \
-        uint8_t char_size = _pw_string_char_size(dest);  \
+        uint8_t char_size = dest->char_size;  \
         uint8_t* dest_ptr = _pw_string_start(dest) + dest_start_pos * char_size;  \
         switch (char_size) {  \
             case 1: cp_##type_name_self##_uint8_t(self_ptr, (uint8_t*) dest_ptr, length); return; \
@@ -1111,7 +997,7 @@ STR_COPY_TO_IMPL(uint32_t)
 
 // copy to C-string
 
-static void _cp_to_u8_uint8_t(uint8_t* self_ptr, char* dest, unsigned length)
+static void _cp_to_utf8_uint8_t(uint8_t* self_ptr, char* dest, unsigned length)
 {
     memcpy(dest, self_ptr, length);
     *(dest + length) = 0;
@@ -1119,8 +1005,8 @@ static void _cp_to_u8_uint8_t(uint8_t* self_ptr, char* dest, unsigned length)
 
 // integral types:
 
-#define STR_COPY_TO_U8_IMPL(type_name_self)  \
-    static void _cp_to_u8_##type_name_self(uint8_t* self_ptr, char* dest, unsigned length)  \
+#define STR_COPY_TO_UTF8_IMPL(type_name_self)  \
+    static void _cp_to_utf8_##type_name_self(uint8_t* self_ptr, char* dest, unsigned length)  \
     {  \
         type_name_self* src_ptr = (type_name_self*) self_ptr;  \
         while (length--) {  \
@@ -1129,12 +1015,12 @@ static void _cp_to_u8_uint8_t(uint8_t* self_ptr, char* dest, unsigned length)
         *dest = 0;  \
     }
 
-STR_COPY_TO_U8_IMPL(uint16_t)
-STR_COPY_TO_U8_IMPL(uint32_t)
+STR_COPY_TO_UTF8_IMPL(uint16_t)
+STR_COPY_TO_UTF8_IMPL(uint32_t)
 
 // uint24_t
 
-static void _cp_to_u8_uint24_t(uint8_t* self_ptr, char* dest, unsigned length)
+static void _cp_to_utf8_uint24_t(uint8_t* self_ptr, char* dest, unsigned length)
 {
     while (length--) {
         char32_t c = _pw_get_char_uint24_t(self_ptr);
@@ -1144,9 +1030,48 @@ static void _cp_to_u8_uint24_t(uint8_t* self_ptr, char* dest, unsigned length)
     *dest = 0;
 }
 
+// copy from ascii string, integral `self` types
+
+#define STR_CP_FROM_ASCII_IMPL(type_name_self)  \
+    static unsigned _cp_from_ascii_##type_name_self(uint8_t* self_ptr, char* src_ptr, unsigned length)  \
+    {  \
+        type_name_self* dest_ptr = (type_name_self*) self_ptr;  \
+        unsigned chars_copied = 0;  \
+        while (length--) {  \
+            char c = *src_ptr++;  \
+            if (c == 0) {  \
+                break;  \
+            }  \
+            *dest_ptr++ = c;  \
+            chars_copied++;  \
+        }  \
+        return chars_copied;  \
+    }
+
+STR_CP_FROM_ASCII_IMPL(uint8_t)
+STR_CP_FROM_ASCII_IMPL(uint16_t)
+STR_CP_FROM_ASCII_IMPL(uint32_t)
+
+// copy from ascii string, uint24 self
+
+static unsigned _cp_from_ascii_uint24_t(uint8_t* self_ptr, char* src_ptr, unsigned length)
+{
+    unsigned chars_copied = 0;
+    while (length--) {
+        char c = *src_ptr++;
+        if (c == 0) {
+            break;
+        }
+        _pw_put_char_uint24_t(self_ptr, c);
+        self_ptr += 3;
+        chars_copied++;
+    }
+    return chars_copied;
+}
+
 // copy from char32_t string, integral `self` types
 
-#define STR_CP_FROM_U32_IMPL(type_name_self)  \
+#define STR_CP_FROM_UTF32_IMPL(type_name_self)  \
     static unsigned _cp_from_char32_t_##type_name_self(uint8_t* self_ptr, char32_t* src_ptr, unsigned length)  \
     {  \
         type_name_self* dest_ptr = (type_name_self*) self_ptr;  \
@@ -1162,9 +1087,9 @@ static void _cp_to_u8_uint24_t(uint8_t* self_ptr, char* dest, unsigned length)
         return chars_copied;  \
     }
 
-STR_CP_FROM_U32_IMPL(uint8_t)
-STR_CP_FROM_U32_IMPL(uint16_t)
-STR_CP_FROM_U32_IMPL(uint32_t)
+STR_CP_FROM_UTF32_IMPL(uint8_t)
+STR_CP_FROM_UTF32_IMPL(uint16_t)
+STR_CP_FROM_UTF32_IMPL(uint32_t)
 
 // copy from char32_t string, uint24 self
 
@@ -1185,13 +1110,13 @@ static unsigned _cp_from_char32_t_uint24_t(uint8_t* self_ptr, char32_t* src_ptr,
 
 // copy from UTF-8_t null-terminated string
 
-#define STR_CP_FROM_U8_IMPL(type_name_self)  \
-    static unsigned _cp_from_u8_##type_name_self(uint8_t* self_ptr, char8_t* src_ptr, unsigned length)  \
+#define STR_CP_FROM_UTF8_IMPL(type_name_self)  \
+    static unsigned _cp_from_utf8_##type_name_self(uint8_t* self_ptr, char8_t* src_ptr, unsigned length)  \
     {  \
         type_name_self* dest_ptr = (type_name_self*) self_ptr;  \
         unsigned chars_copied = 0;  \
         while (*src_ptr != 0 && length--) {  \
-            char32_t c = read_utf8_char(&src_ptr);  \
+            char32_t c = _pw_decode_utf8_char(&src_ptr);  \
             if (c != 0xFFFFFFFF) {  \
                 *dest_ptr++ = c;  \
                 chars_copied++;  \
@@ -1200,15 +1125,15 @@ static unsigned _cp_from_char32_t_uint24_t(uint8_t* self_ptr, char32_t* src_ptr,
         return chars_copied;  \
     }
 
-STR_CP_FROM_U8_IMPL(uint8_t)
-STR_CP_FROM_U8_IMPL(uint16_t)
-STR_CP_FROM_U8_IMPL(uint32_t)
+STR_CP_FROM_UTF8_IMPL(uint8_t)
+STR_CP_FROM_UTF8_IMPL(uint16_t)
+STR_CP_FROM_UTF8_IMPL(uint32_t)
 
-static unsigned _cp_from_u8_uint24_t(uint8_t* self_ptr, uint8_t* src_ptr, unsigned length)
+static unsigned _cp_from_utf8_uint24_t(uint8_t* self_ptr, uint8_t* src_ptr, unsigned length)
 {
     unsigned chars_copied = 0;
     while ((*((uint8_t*) src_ptr)) && length--) {
-        char32_t c = read_utf8_char(&src_ptr);
+        char32_t c = _pw_decode_utf8_char(&src_ptr);
         if (c != 0xFFFFFFFF) {
             _pw_put_char_uint24_t(self_ptr, c);
             self_ptr += 3;
@@ -1221,26 +1146,29 @@ static unsigned _cp_from_u8_uint24_t(uint8_t* self_ptr, uint8_t* src_ptr, unsign
 /*
  * String methods table
  */
-StrMethods _pws_str_methods[4] = {
-    { _hash_uint8_t,        _max_char_size_uint8_t,
-      _eq_uint8_t,          _eq_uint8_t_char8_t,   _eq_uint8_t_char32_t,
-      _cp_to_uint8_t,       _cp_to_u8_uint8_t,
-      _cp_from_u8_uint8_t,  _cp_from_char32_t_uint8_t
+StrMethods _pws_str_methods[5] = {
+    {
+        // TODO UTF-8
     },
-    { _hash_uint16_t,       _max_char_size_uint16_t,
-      _eq_uint16_t,         _eq_uint16_t_char8_t,  _eq_uint16_t_char32_t,
-      _cp_to_uint16_t,      _cp_to_u8_uint16_t,
-      _cp_from_u8_uint16_t, _cp_from_char32_t_uint16_t
+    { _hash_uint8_t,           _max_char_size_uint8_t,
+      _eq_uint8_t,             _eq_uint8_t_ascii,       _eq_uint8_t_char8_t,       _eq_uint8_t_char32_t,
+      _cp_to_uint8_t,          _cp_to_utf8_uint8_t,
+      _cp_from_ascii_uint8_t,  _cp_from_utf8_uint8_t,   _cp_from_char32_t_uint8_t
     },
-    { _hash_uint24_t,       _max_char_size_uint24_t,
-      _eq_uint24_t,         _eq_uint24_t_char8_t,  _eq_uint24_t_char32_t,
-      _cp_to_uint24_t,      _cp_to_u8_uint24_t,
-      _cp_from_u8_uint24_t, _cp_from_char32_t_uint24_t
+    { _hash_uint16_t,          _max_char_size_uint16_t,
+      _eq_uint16_t,            _eq_uint16_t_ascii,      _eq_uint16_t_char8_t,      _eq_uint16_t_char32_t,
+      _cp_to_uint16_t,         _cp_to_utf8_uint16_t,
+      _cp_from_ascii_uint16_t, _cp_from_utf8_uint16_t,  _cp_from_char32_t_uint16_t
     },
-    { _hash_uint32_t,       _max_char_size_uint32_t,
-      _eq_uint32_t,         _eq_uint32_t_char8_t,  _eq_uint32_t_char32_t,
-      _cp_to_uint32_t,      _cp_to_u8_uint32_t,
-      _cp_from_u8_uint32_t, _cp_from_char32_t_uint32_t
+    { _hash_uint24_t,          _max_char_size_uint24_t,
+      _eq_uint24_t,            _eq_uint24_t_ascii,      _eq_uint24_t_char8_t,      _eq_uint24_t_char32_t,
+      _cp_to_uint24_t,         _cp_to_utf8_uint24_t,
+      _cp_from_ascii_uint24_t, _cp_from_utf8_uint24_t,  _cp_from_char32_t_uint24_t
+    },
+    { _hash_uint32_t,          _max_char_size_uint32_t,
+      _eq_uint32_t,            _eq_uint32_t_ascii,      _eq_uint32_t_char8_t,      _eq_uint32_t_char32_t,
+      _cp_to_uint32_t,         _cp_to_utf8_uint32_t,
+      _cp_from_ascii_uint32_t, _cp_from_utf8_uint32_t,  _cp_from_char32_t_uint32_t
     }
 };
 
@@ -1256,16 +1184,10 @@ StrMethods _pws_str_methods[4] = {
 
 [[nodiscard]] bool _pw_create_string(PwValuePtr initializer, PwValuePtr result)
 {
-    if (!pw_is_string(initializer)) {
-        if (pw_is_charptr(initializer)) {
-            return pw_charptr_to_string(initializer, result);
-        }
-        pw_set_status(PwStatus(PW_ERROR_INCOMPATIBLE_TYPE));
-        return false;
-    }
+    pw_expect(String, initializer);
 
-    unsigned length = _pw_string_length(initializer);
-    if (!make_empty_string(PwTypeId_String, length, _pw_string_char_size(initializer), result)) {
+    unsigned length = pw_strlen(initializer);
+    if (!make_empty_string(PwTypeId_String, length, initializer->char_size, result)) {
         return false;
     }
     get_str_methods(initializer)->copy_to(_pw_string_start(initializer), result, 0, length);
@@ -1273,7 +1195,26 @@ StrMethods _pws_str_methods[4] = {
     return true;
 }
 
-[[nodiscard]] bool _pw_create_string_u8(char8_t* initializer, PwValuePtr result)
+[[nodiscard]] bool _pw_create_string_ascii(char* initializer, PwValuePtr result)
+{
+    unsigned length = 0;
+
+    if (initializer && *initializer == 0) {
+        initializer = nullptr;
+    } else {
+        length = strlen(initializer);
+    }
+    if (!make_empty_string(PwTypeId_String, length, 1, result)) {
+        return false;
+    }
+    if (initializer) {
+        strcpy((char*) _pw_string_start(result), initializer);
+        _pw_string_set_length(result, length);
+    }
+    return true;
+}
+
+[[nodiscard]] bool _pw_create_string_utf8(char8_t* initializer, PwValuePtr result)
 {
     unsigned length = 0;
     uint8_t char_size = 1;
@@ -1293,7 +1234,7 @@ StrMethods _pws_str_methods[4] = {
     return true;
 }
 
-[[nodiscard]] bool _pw_create_string_u32(char32_t* initializer, PwValuePtr result)
+[[nodiscard]] bool _pw_create_string_utf32(char32_t* initializer, PwValuePtr result)
 {
     unsigned length = 0;
     uint8_t char_size = 1;
@@ -1301,7 +1242,7 @@ StrMethods _pws_str_methods[4] = {
     if (initializer && *initializer == 0) {
         initializer = nullptr;
     } else {
-        length = u32_strlen2(initializer, &char_size);
+        length = utf32_strlen2(initializer, &char_size);
     }
 
     if (!make_empty_string(PwTypeId_String, length, char_size, result)) {
@@ -1314,29 +1255,66 @@ StrMethods _pws_str_methods[4] = {
     return result;
 }
 
+_PwValue PwStringAscii(char* initializer)
+{
+    _PwValue s = PW_STRING_ASCII("");
+    s.length = strlen(initializer);
+    s.char_ptr = (uint8_t*) initializer;
+    return s;
+}
+
+_PwValue PwStringUtf32(char32_t* initializer)
+{
+    _PwValue s = PW_STRING_UTF32("");
+    s.length = utf32_strlen(initializer);
+    s.char_ptr = (uint8_t*) initializer;
+    return s;
+}
+
+_PwValue PwStringUtf8(char8_t* initializer)
+{
+    _PwValue result = PW_NULL;
+    if (!_pw_create_string_utf8(initializer, &result)) {
+        pw_panic("Cannot create string from %s\n", initializer);
+    }
+    return result;
+}
+
 /****************************************************************
  * String functions
  */
 
-unsigned pw_strlen(PwValuePtr str)
+static inline uint8_t* _pw_string_char_ptr(PwValuePtr str, unsigned position)
+/*
+ * Return address of character in string at `position`.
+ * If position is beyond end of line return nullptr.
+ */
 {
-    if (pw_is_charptr(str)) {
-        uint8_t char_size;
-        return _pw_charptr_strlen2(str, &char_size);
+    unsigned offset = position * str->char_size;
+    if (str->embedded) {
+        if (position < str->embedded_length) {
+            return &str->str_1[offset];
+        }
     } else {
-        pw_assert_string(str);
-        return _pw_string_length(str);
+        if (position < str->length) {
+            return &str->string_data->data[offset];
+        }
+    }
+    return nullptr;
+}
+
+char32_t pw_char_at(PwValuePtr str, unsigned position)
+{
+    pw_assert_string(str);
+
+    uint8_t char_size = str->char_size;
+    uint8_t* char_ptr = _pw_string_char_ptr(str, position);
+    if (char_ptr) {
+        return _pw_get_char(char_ptr, char_size);
+    } else {
+        return 0;
     }
 }
-
-#define STRING_EQ_IMPL(suffix, type_name_b)  \
-{  \
-    pw_assert_string(a);  \
-    return get_str_methods(a)->equal_##suffix(_pw_string_start(a), (type_name_b*) b, _pw_string_length(a));  \
-}
-
-bool _pw_equal_u8 (PwValuePtr a, char8_t* b)  STRING_EQ_IMPL(u8,  char8_t)
-bool _pw_equal_u32(PwValuePtr a, char32_t* b) STRING_EQ_IMPL(u32, char32_t)
 
 #define SUBSTRING_EQ_IMPL(suffix, type_name_b)  \
 {  \
@@ -1355,13 +1333,14 @@ bool _pw_equal_u32(PwValuePtr a, char32_t* b) STRING_EQ_IMPL(u32, char32_t)
     }  \
     \
     return get_str_methods(a)->equal_##suffix(  \
-        a_ptr + start_pos * _pw_string_char_size(a),  \
+        a_ptr + start_pos * a->char_size,  \
         b,  \
         end_pos - start_pos);  \
 }
 
-bool _pw_substring_eq_u8 (PwValuePtr a, unsigned start_pos, unsigned end_pos, char8_t*  b) SUBSTRING_EQ_IMPL(u8,  char8_t)
-bool _pw_substring_eq_u32(PwValuePtr a, unsigned start_pos, unsigned end_pos, char32_t* b) SUBSTRING_EQ_IMPL(u32, char32_t)
+bool _pw_substring_eq_ascii(PwValuePtr a, unsigned start_pos, unsigned end_pos, char*     b) SUBSTRING_EQ_IMPL(ascii, char)
+bool _pw_substring_eq_utf8 (PwValuePtr a, unsigned start_pos, unsigned end_pos, char8_t*  b) SUBSTRING_EQ_IMPL(utf8,  char8_t)
+bool _pw_substring_eq_utf32(PwValuePtr a, unsigned start_pos, unsigned end_pos, char32_t* b) SUBSTRING_EQ_IMPL(utf32, char32_t)
 
 bool _pw_substring_eq(PwValuePtr a, unsigned start_pos, unsigned end_pos, PwValuePtr b)
 {
@@ -1378,12 +1357,12 @@ bool _pw_substring_eq(PwValuePtr a, unsigned start_pos, unsigned end_pos, PwValu
 
     pw_assert_string(b);
 
-    if (end_pos == start_pos && _pw_string_length(b) == 0) {
+    if (end_pos == start_pos && pw_strlen(b) == 0) {
         return true;
     }
 
     return get_str_methods(a)->equal(
-        a_ptr + start_pos * _pw_string_char_size(a),
+        a_ptr + start_pos * a->char_size,
         b, 0,
         end_pos - start_pos
     );
@@ -1392,21 +1371,26 @@ bool _pw_substring_eq(PwValuePtr a, unsigned start_pos, unsigned end_pos, PwValu
 bool _pw_startswith_c32(PwValuePtr str, char32_t prefix)
 {
     pw_assert_string(str);
-    unsigned length = _pw_string_length(str);
+    unsigned length = pw_strlen(str);
     if (length == 0) {
         return false;
     }
-    return _pw_get_char(_pw_string_start(str), _pw_string_char_size(str)) == prefix;
+    return _pw_get_char(_pw_string_start(str), str->char_size) == prefix;
 }
 
-bool _pw_startswith_u8(PwValuePtr str, char8_t* prefix)
+bool _pw_startswith_ascii(PwValuePtr str, char* prefix)
 {
-    return _pw_substring_eq_u8(str, 0, utf8_strlen(prefix), prefix);
+    return _pw_substring_eq_ascii(str, 0, strlen(prefix), prefix);
 }
 
-bool _pw_startswith_u32(PwValuePtr str, char32_t* prefix)
+bool _pw_startswith_utf8(PwValuePtr str, char8_t* prefix)
 {
-    return _pw_substring_eq_u32(str, 0, u32_strlen(prefix), prefix);
+    return _pw_substring_eq_utf8(str, 0, utf8_strlen(prefix), prefix);
+}
+
+bool _pw_startswith_utf32(PwValuePtr str, char32_t* prefix)
+{
+    return _pw_substring_eq_utf32(str, 0, utf32_strlen(prefix), prefix);
 }
 
 bool _pw_startswith(PwValuePtr str, PwValuePtr prefix)
@@ -1423,22 +1407,29 @@ bool _pw_endswith_c32(PwValuePtr str, char32_t prefix)
     if (length == 0) {
         return false;
     }
-    uint8_t char_size = _pw_string_char_size(str);
+    uint8_t char_size = str->char_size;
     return prefix == _pw_get_char(ptr + (length - 1) * char_size, char_size);
 }
 
-bool _pw_endswith_u8(PwValuePtr str, char8_t* suffix)
+bool _pw_endswith_ascii(PwValuePtr str, char* suffix)
+{
+    unsigned str_len = pw_strlen(str);
+    unsigned suffix_len = strlen(suffix);
+    return _pw_substring_eq_ascii(str, str_len - suffix_len, str_len, suffix);
+}
+
+bool _pw_endswith_utf8(PwValuePtr str, char8_t* suffix)
 {
     unsigned str_len = pw_strlen(str);
     unsigned suffix_len = utf8_strlen(suffix);
-    return _pw_substring_eq_u8(str, str_len - suffix_len, str_len, suffix);
+    return _pw_substring_eq_utf8(str, str_len - suffix_len, str_len, suffix);
 }
 
-bool _pw_endswith_u32(PwValuePtr str, char32_t*  suffix)
+bool _pw_endswith_utf32(PwValuePtr str, char32_t*  suffix)
 {
     unsigned str_len = pw_strlen(str);
-    unsigned suffix_len = u32_strlen(suffix);
-    return _pw_substring_eq_u32(str, str_len - suffix_len, str_len, suffix);
+    unsigned suffix_len = utf32_strlen(suffix);
+    return _pw_substring_eq_utf32(str, str_len - suffix_len, str_len, suffix);
 }
 
 bool _pw_endswith(PwValuePtr str, PwValuePtr suffix)
@@ -1448,160 +1439,70 @@ bool _pw_endswith(PwValuePtr str, PwValuePtr suffix)
     return _pw_substring_eq(str, str_len - suffix_len, str_len, suffix);
 }
 
+unsigned pw_strlen_in_utf8(PwValuePtr str)
+{
+    unsigned length = 0;
+
+    pw_assert_string(str);
+    uint8_t char_size = str->char_size;
+    unsigned n;
+    uint8_t* ptr = _pw_string_start_length(str, &n);
+    while (n) {
+        char32_t c = _pw_get_char(ptr, char_size);
+        if (c < 0x80) {
+            length++;
+        } else if (c < 0b1'00000'000000) {
+            length += 2;
+        } else if (c < 0b1'0000'000000'000000) {
+            length += 3;
+        } else {
+            length += 4;
+        }
+        ptr += char_size;
+        n--;
+    }
+    return length;
+}
 
 CStringPtr pw_string_to_utf8(PwValuePtr str)
 {
     CStringPtr result = nullptr;
 
-    if (pw_is_charptr(str)) {
-        switch (str->charptr_subtype) {
-            case PwSubType_CharPtr: {
-                result = malloc(strlen((char*) str) + 1);
-                if (!result) {
-                    return nullptr;
-                }
-                strcpy(result, (char*) str->charptr);
-                break;
-            }
-            case PwSubType_Char32Ptr: {
-                result = malloc(pw_strlen_in_utf8(str) + 1);
-                if (!result) {
-                    return nullptr;
-                }
-                char32_t* src_ptr = str->char32ptr;
-                char* dest_ptr = result;
-                for(;;) {
-                    char32_t c = *src_ptr++;
-                    if (c == 0) {
-                        break;
-                    }
-                    dest_ptr = pw_char32_to_utf8(c, dest_ptr);
-                }
-                *dest_ptr = 0;
-                break;
-            }
-            default:
-                _pw_panic_bad_charptr_subtype(str);
-        }
-    } else {
-        pw_assert_string(str);
-
-        result = malloc(pw_strlen_in_utf8(str) + 1);
-        if (!result) {
-            return nullptr;
-        }
-        unsigned length;
-        uint8_t* ptr = _pw_string_start_length(str, &length);
-        get_str_methods(str)->copy_to_u8(ptr, result, length);
+    result = malloc(pw_strlen_in_utf8(str) + 1);
+    if (!result) {
+        return nullptr;
     }
+    unsigned length;
+    uint8_t* ptr = _pw_string_start_length(str, &length);
+    get_str_methods(str)->copy_to_utf8(ptr, result, length);
     return result;
 }
 
 void pw_string_to_utf8_buf(PwValuePtr str, char* buffer)
 {
-    if (pw_is_charptr(str)) {
-        switch (str->charptr_subtype) {
-            case PwSubType_CharPtr:
-                strcpy(buffer, (char*) str->charptr);
-                return;
-            case PwSubType_Char32Ptr:
-                for(char32_t* src_ptr = str->char32ptr;;) {
-                    char32_t c = *src_ptr++;
-                    if (c == 0) {
-                        break;
-                    }
-                    buffer = pw_char32_to_utf8(c, buffer);
-                }
-                *buffer = 0;
-                return;
-            default:
-                _pw_panic_bad_charptr_subtype(str);
-        }
-    } else {
-        pw_assert_string(str);
-        unsigned length;
-        uint8_t* ptr = _pw_string_start_length(str, &length);
-        get_str_methods(str)->copy_to_u8(ptr, buffer, length);
-    }
+    pw_assert_string(str);
+    unsigned length;
+    uint8_t* ptr = _pw_string_start_length(str, &length);
+    get_str_methods(str)->copy_to_utf8(ptr, buffer, length);
 }
 
 void pw_substr_to_utf8_buf(PwValuePtr str, unsigned start_pos, unsigned end_pos, char* buffer)
 {
-    if (pw_is_charptr(str)) {
-        if (start_pos >= end_pos) {
-            *buffer = 0;
-            return;
-        }
-        switch (str->charptr_subtype) {
-            case PwSubType_CharPtr: {
-                char8_t* src_ptr = str->charptr;
-                unsigned i = 0;
-                for(; i < start_pos; i++) {
-                    char32_t c = read_utf8_char(&src_ptr);
-                    if (c == 0xFFFFFFFF) {
-                        continue;
-                    }
-                    if (c == 0) {
-                        *buffer = 0;
-                        return;
-                    }
-                }
-                for(; i < end_pos; i++) {
-                    char32_t c = read_utf8_char(&src_ptr);
-                    if (c == 0xFFFFFFFF) {
-                        continue;
-                    }
-                    if (c == 0) {
-                        *buffer = 0;
-                        return;
-                    }
-                    buffer = pw_char32_to_utf8(c, buffer);
-                }
-                *buffer = 0;
-                return;
-            }
-
-            case PwSubType_Char32Ptr: {
-                char32_t* src_ptr = str->char32ptr;
-                unsigned i = 0;
-                for(; i < start_pos; i++) {
-                    char32_t c = *src_ptr++;
-                    if (c == 0) {
-                        *buffer = 0;
-                        return;
-                    }
-                }
-                for(; i < end_pos; i++) {
-                    char32_t c = *src_ptr++;
-                    if (c == 0) {
-                        *buffer = 0;
-                        return;
-                    }
-                    buffer = pw_char32_to_utf8(c, buffer);
-                }
-                *buffer = 0;
-                return;
-            }
-            default:
-                _pw_panic_bad_charptr_subtype(str);
-        }
-    } else {
-        pw_assert_string(str);
-        unsigned length;
-        uint8_t* ptr = _pw_string_start_length(str, &length);
-        if (end_pos >= length) {
-            end_pos = length;
-        }
-        if (end_pos <= start_pos) {
-            *buffer = 0;
-            return;
-        }
-        get_str_methods(str)->copy_to_u8(
-            ptr + start_pos * _pw_string_char_size(str),
-            buffer,
-            end_pos - start_pos
-        );
+    pw_assert_string(str);
+    unsigned length;
+    uint8_t* ptr = _pw_string_start_length(str, &length);
+    if (end_pos >= length) {
+        end_pos = length;
     }
+    if (end_pos <= start_pos) {
+        *buffer = 0;
+        return;
+    }
+    get_str_methods(str)->copy_to_utf8(
+        ptr + start_pos * str->char_size,
+        buffer,
+        end_pos - start_pos
+    );
 }
 
 void pw_destroy_cstring(CStringPtr* str)
@@ -1616,11 +1517,52 @@ void pw_destroy_cstring(CStringPtr* str)
         return false;
     }
     unsigned length = _pw_string_inc_length(dest, 1);
-    _pw_put_char(_pw_string_char_ptr(dest, length), c, _pw_string_char_size(dest));
+    _pw_put_char(_pw_string_char_ptr(dest, length), c, dest->char_size);
     return true;
 }
 
-[[ nodiscard]] static bool append_u8(PwValuePtr dest, char8_t* src, unsigned src_len, uint8_t src_char_size)
+[[ nodiscard]] static bool append_ascii(PwValuePtr dest, char* src, unsigned src_len)
+/*
+ * `src_len` contains the number of codepoints, not the number of bytes in `src`
+ */
+{
+    if (src_len == 0) {
+        return true;
+    }
+    if (!expand_string(dest, src_len, 1)) {
+        return false;
+    }
+    unsigned dest_length = _pw_string_inc_length(dest, src_len);
+    get_str_methods(dest)->copy_from_ascii(
+        _pw_string_start(dest) + dest_length * dest->char_size,
+        src,
+        src_len
+    );
+    return true;
+}
+
+[[ nodiscard]] bool _pw_string_append_ascii(PwValuePtr dest, char* src)
+{
+    unsigned src_len = strlen(src);
+    return append_ascii(dest, src, src_len);
+}
+
+[[ nodiscard]] bool _pw_string_append_substring_ascii(PwValuePtr dest, char* src, unsigned src_start_pos, unsigned src_end_pos)
+{
+    unsigned src_len = strlen(src);
+    if (src_end_pos > src_len) {
+        src_end_pos = src_len;
+    }
+    if (src_start_pos >= src_end_pos) {
+        return true;
+    }
+    src_len = src_end_pos - src_start_pos;
+    src += src_start_pos;
+
+    return append_ascii(dest, src, src_len);
+}
+
+[[ nodiscard]] static bool append_utf8(PwValuePtr dest, char8_t* src, unsigned src_len, uint8_t src_char_size)
 /*
  * `src_len` contains the number of codepoints, not the number of bytes in `src`
  */
@@ -1633,21 +1575,21 @@ void pw_destroy_cstring(CStringPtr* str)
     }
     unsigned dest_length = _pw_string_inc_length(dest, src_len);
     get_str_methods(dest)->copy_from_utf8(
-        _pw_string_start(dest) + dest_length * _pw_string_char_size(dest),
+        _pw_string_start(dest) + dest_length * dest->char_size,
         src,
         src_len
     );
     return true;
 }
 
-[[ nodiscard]] bool _pw_string_append_u8(PwValuePtr dest, char8_t* src)
+[[ nodiscard]] bool _pw_string_append_utf8(PwValuePtr dest, char8_t* src)
 {
     uint8_t src_char_size;
     unsigned src_len = utf8_strlen2(src, &src_char_size);
-    return append_u8(dest, src, src_len, src_char_size);
+    return append_utf8(dest, src, src_len, src_char_size);
 }
 
-[[ nodiscard]] bool _pw_string_append_substring_u8(PwValuePtr dest, char8_t* src, unsigned src_start_pos, unsigned src_end_pos)
+[[ nodiscard]] bool _pw_string_append_substring_utf8(PwValuePtr dest, char8_t* src, unsigned src_start_pos, unsigned src_end_pos)
 {
     uint8_t src_char_size;
     unsigned src_len = utf8_strlen2(src, &src_char_size);
@@ -1660,10 +1602,10 @@ void pw_destroy_cstring(CStringPtr* str)
     src_len = src_end_pos - src_start_pos;
     src = utf8_skip(src, src_start_pos);
 
-    return append_u8(dest, src, src_len, src_char_size);
+    return append_utf8(dest, src, src_len, src_char_size);
 }
 
-[[ nodiscard]] static bool append_u32(PwValuePtr dest, char32_t* src, unsigned src_len, uint8_t src_char_size)
+[[ nodiscard]] static bool append_utf32(PwValuePtr dest, char32_t* src, unsigned src_len, uint8_t src_char_size)
 {
     if (src_len == 0) {
         return true;
@@ -1673,24 +1615,24 @@ void pw_destroy_cstring(CStringPtr* str)
     }
     unsigned dest_length = _pw_string_inc_length(dest, src_len);
     get_str_methods(dest)->copy_from_utf32(
-        _pw_string_start(dest) + dest_length * _pw_string_char_size(dest),
+        _pw_string_start(dest) + dest_length * dest->char_size,
         src,
         src_len
     );
     return true;
 }
 
-[[ nodiscard]] bool _pw_string_append_u32(PwValuePtr dest, char32_t* src)
+[[ nodiscard]] bool _pw_string_append_utf32(PwValuePtr dest, char32_t* src)
 {
     uint8_t src_char_size;
-    unsigned src_len = u32_strlen2(src, &src_char_size);
-    return append_u32(dest, src, src_len, src_char_size);
+    unsigned src_len = utf32_strlen2(src, &src_char_size);
+    return append_utf32(dest, src, src_len, src_char_size);
 }
 
-[[ nodiscard]] bool _pw_string_append_substring_u32(PwValuePtr dest, char32_t*  src, unsigned src_start_pos, unsigned src_end_pos)
+[[ nodiscard]] bool _pw_string_append_substring_utf32(PwValuePtr dest, char32_t*  src, unsigned src_start_pos, unsigned src_end_pos)
 {
     uint8_t src_char_size;
-    unsigned src_len = u32_strlen2(src, &src_char_size);
+    unsigned src_len = utf32_strlen2(src, &src_char_size);
     if (src_end_pos > src_len) {
         src_end_pos = src_len;
     }
@@ -1700,7 +1642,7 @@ void pw_destroy_cstring(CStringPtr* str)
     src_len = src_end_pos - src_start_pos;
     src += src_start_pos;
 
-    return append_u32(dest, src, src_len, src_char_size);
+    return append_utf32(dest, src, src_len, src_char_size);
 }
 
 [[ nodiscard]] static bool append_string(PwValuePtr dest, PwValuePtr src, unsigned src_start_pos, unsigned src_len)
@@ -1708,12 +1650,12 @@ void pw_destroy_cstring(CStringPtr* str)
     if (src_len == 0) {
         return true;
     }
-    if (!expand_string(dest, src_len, _pw_string_char_size(src))) {
+    if (!expand_string(dest, src_len, src->char_size)) {
         return false;
     }
     unsigned dest_length = _pw_string_inc_length(dest, src_len);
     get_str_methods(src)->copy_to(
-        _pw_string_start(src) + src_start_pos * _pw_string_char_size(src),
+        _pw_string_start(src) + src_start_pos * src->char_size,
         dest,
         dest_length, src_len
     );
@@ -1722,27 +1664,15 @@ void pw_destroy_cstring(CStringPtr* str)
 
 [[ nodiscard]] bool _pw_string_append(PwValuePtr dest, PwValuePtr src)
 {
-    if (pw_is_charptr(src)) {
-        switch (src->charptr_subtype) {
-            case PwSubType_CharPtr:
-                return _pw_string_append_u8(dest, src->charptr);
-            case PwSubType_Char32Ptr:
-                return _pw_string_append_u32(dest, src->char32ptr);
-            default:
-                _pw_panic_bad_charptr_subtype(src);
-        }
-    } else {
-        pw_assert_string(src);
-        unsigned src_len = _pw_string_length(src);
-        return append_string(dest, src, 0, src_len);
-    }
+    unsigned src_len = pw_strlen(src);
+    return append_string(dest, src, 0, src_len);
 }
 
 [[ nodiscard]] bool _pw_string_append_substring(PwValuePtr dest, PwValuePtr src, unsigned src_start_pos, unsigned src_end_pos)
 {
     pw_assert_string(src);
 
-    unsigned src_len = _pw_string_length(src);
+    unsigned src_len = pw_strlen(src);
     if (src_end_pos > src_len) {
         src_end_pos = src_len;
     }
@@ -1754,35 +1684,13 @@ void pw_destroy_cstring(CStringPtr* str)
     return append_string(dest, src, src_start_pos, src_len);
 }
 
-[[ nodiscard]] bool pw_string_append_utf8(PwValuePtr dest, char8_t* buffer, unsigned size, unsigned* bytes_processed)
-{
-    *bytes_processed = size;
-    if (size == 0) {
-        return true;
-    }
-    uint8_t src_char_size;
-    unsigned src_len = utf8_strlen2_buf(buffer, bytes_processed, &src_char_size);
-
-    if (src_len) {
-        if (!expand_string(dest, src_len, src_char_size)) {
-            return false;
-        }
-        unsigned dest_length = _pw_string_inc_length(dest, src_len);
-        get_str_methods(dest)->copy_from_utf8(
-            _pw_string_start(dest) + dest_length * _pw_string_char_size(dest),
-            buffer,
-            src_len
-        );
-    }
-    return true;
-}
-
 [[ nodiscard]] bool pw_string_append_buffer(PwValuePtr dest, uint8_t* buffer, unsigned size)
 {
     if (size == 0) {
         return true;
     }
-    pw_assert(pw_string_char_size(dest) == 1);
+    pw_assert_string(dest);
+    pw_assert(dest->char_size == 1);
 
     if (!expand_string(dest, size, 1)) {
         return false;
@@ -1806,7 +1714,7 @@ void pw_destroy_cstring(CStringPtr* str)
         return false;
     }
     unsigned len = _pw_string_inc_length(str, n);
-    uint8_t char_size = _pw_string_char_size(str);
+    uint8_t char_size = str->char_size;
     uint8_t* insertion_ptr = _pw_string_start(str) + position * char_size;
 
     if (position < len) {
@@ -1821,11 +1729,7 @@ void pw_destroy_cstring(CStringPtr* str)
 
 [[nodiscard]] bool pw_substr(PwValuePtr str, unsigned start_pos, unsigned end_pos, PwValuePtr result)
 {
-    pw_assert_string(str);
-    StrMethods* strmeth = get_str_methods(str);
-
-    unsigned length;
-    uint8_t* src = _pw_string_start_length(str, &length);
+    unsigned length = pw_strlen(str);
 
     if (end_pos > length) {
         end_pos = length;
@@ -1834,24 +1738,20 @@ void pw_destroy_cstring(CStringPtr* str)
         return pw_create_empty_string(0, 1, result);
     }
     length = end_pos - start_pos;
-
-    src += start_pos * _pw_string_char_size(str);
-    uint8_t char_size = strmeth->max_char_size(src, length);
-
-    if (!pw_create_empty_string(length, char_size, result)) {
+    uint8_t char_size = str->char_size;
+    if (!make_empty_string(str->type_id, length, char_size, result)) {
         return false;
     }
-    strmeth->copy_to(src, result, 0, length);
+    uint8_t* src_ptr = _pw_string_start(str) + start_pos * char_size;
+    uint8_t* dest_ptr = _pw_string_start(result);
+    memcpy(dest_ptr, src_ptr, length * char_size);
     _pw_string_set_length(result, length);
     return true;
 }
 
 [[ nodiscard]] bool pw_string_erase(PwValuePtr str, unsigned start_pos, unsigned end_pos)
 {
-    pw_assert_string(str);
-    unsigned length;
-    uint8_t* ptr = _pw_string_start_length(str, &length);
-
+    unsigned length = pw_strlen(str);
     if (start_pos >= length || start_pos >= end_pos) {
         return true;
     }
@@ -1860,21 +1760,21 @@ void pw_destroy_cstring(CStringPtr* str)
     }
     if (end_pos >= length) {
         // truncate
-        length = start_pos;
+        _pw_string_set_length(str, start_pos);
     } else {
-        unsigned tail_len = length - end_pos;
-        uint8_t char_size = _pw_string_char_size(str);
-        memmove(ptr + start_pos * char_size, ptr + end_pos * char_size, tail_len * char_size);
+        // erase in-place
+        uint8_t* start_ptr = _pw_string_start(str);
+        uint8_t char_size = str->char_size;
         length -= end_pos - start_pos;
+        memmove(start_ptr + start_pos * char_size, start_ptr + end_pos * char_size, length * char_size);
+        _pw_string_set_length(str, length);
     }
-    _pw_string_set_length(str, length);
     return true;
 }
 
 [[ nodiscard]] bool pw_string_truncate(PwValuePtr str, unsigned position)
 {
-    pw_assert_string(str);
-    if (position >= _pw_string_length(str)) {
+    if (position >= pw_strlen(str)) {
         return true;
     }
     if (!copy_on_write(str)) {
@@ -1887,58 +1787,49 @@ void pw_destroy_cstring(CStringPtr* str)
 [[ nodiscard]] bool pw_strchr(PwValuePtr str, char32_t chr, unsigned start_pos, unsigned* result)
 {
     pw_assert_string(str);
-    uint8_t char_size = _pw_string_char_size(str);
-    unsigned length;
-    uint8_t* ptr = _pw_string_start_length(str, &length);
-    ptr += start_pos * char_size;
-    for (unsigned i = start_pos; i < length; i++) {
-        char32_t codepoint = _pw_get_char(ptr, char_size);
+    unsigned i = start_pos;
+    PW_STRING_ITER_FROM(src, str, start_pos);
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t codepoint = PW_STRING_ITER_NEXT(src);
         if (codepoint == chr) {
             if (result) {
                 *result = i;
             }
             return true;
         }
-        ptr += char_size;
-    }
+        i++;
+    };
     return false;
 }
 
 [[ nodiscard]] bool pw_string_ltrim(PwValuePtr str)
 {
     pw_assert_string(str);
-    unsigned len;
-    uint8_t* ptr = _pw_string_start_length(str, &len);
-    uint8_t char_size = _pw_string_char_size(str);
 
-    unsigned i = 0;
-    while (i < len) {
-        char32_t c = _pw_get_char(ptr, char_size);
+    unsigned start_pos = 0;
+    PW_STRING_ITER(src, str);
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t c = PW_STRING_ITER_NEXT(src);
         if (!pw_isspace(c)) {
             break;
         }
-        i++;
-        ptr += char_size;
+        start_pos++;
     }
-    return pw_string_erase(str, 0, i);
+    return pw_string_erase(str, 0, start_pos);
 }
 
 [[ nodiscard]] bool pw_string_rtrim(PwValuePtr str)
 {
-    pw_assert_string(str);
-    unsigned n;
-    uint8_t* ptr = _pw_string_start_length(str, &n);
-    uint8_t char_size = _pw_string_char_size(str);
-    ptr += n * char_size;
-    while (n) {
-        ptr -= char_size;
-        char32_t c = _pw_get_char(ptr, char_size);
+    unsigned end_pos = pw_strlen(str);
+    PW_STRING_ITER_REVERSE(src, str);
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t c = PW_STRING_ITER_PREV(src);
         if (!pw_isspace(c)) {
             break;
         }
-        n--;
+        end_pos--;
     }
-    return pw_string_truncate(str, n);
+    return pw_string_truncate(str, end_pos);
 }
 
 [[ nodiscard]] bool pw_string_trim(PwValuePtr str)
@@ -1948,62 +1839,98 @@ void pw_destroy_cstring(CStringPtr* str)
 
 [[ nodiscard]] bool pw_string_lower(PwValuePtr str)
 {
-    unsigned n;
-    uint8_t* ptr = _pw_string_start_length(str, &n);
-    uint8_t char_size = _pw_string_char_size(str);
-    bool copied = str->str_embedded;  // normally this should be initialized to false,
-                                      // but we don't have to copy embedded strings
-    while (n) {
-        char32_t c = _pw_get_char(ptr, char_size);
-        char32_t upper_c = pw_char_lower(c);
-        if (upper_c != c ) {
-            // copy on write only if it is really necessary
-            if (!copied) {
-                if (!copy_on_write(str)) {
-                    return false;
-                }
-                copied = true;
+    pw_assert_string(str);
 
-                // use new ptr
-                unsigned m;
-                ptr = _pw_string_start_length(str, &m);
-                ptr += (m - n) * char_size;
+    if (str->embedded) {
+        // embedded strings never need a copy on write
+        PW_STRING_ITER(src, str);
+        while (!PW_STRING_ITER_DONE(src)) {
+            char32_t c = PW_STRING_ITER_GETCHAR(src);
+            char32_t lower_c = pw_char_lower(c);
+            if (lower_c != c ) {
+                PW_STRING_ITER_PUTCHAR(src, lower_c);
             }
-            _pw_put_char(ptr, c, char_size);
+            PW_STRING_ITER_INC(src);
+        };
+        return true;
+    }
+
+    unsigned start_pos = 0;
+    PW_STRING_ITER(src, str);
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t c = PW_STRING_ITER_GETCHAR(src);
+        char32_t lower_c = pw_char_lower(c);
+        if (lower_c != c ) {
+
+            // copy string if necessary and proceed
+
+            if (!copy_on_write(str)) {
+                return false;
+            }
+            PW_STRING_ITER_RESET_FROM(src, str, start_pos);
+            PW_STRING_ITER_PUTCHAR(src, lower_c);
+            PW_STRING_ITER_INC(src);
+            while (!PW_STRING_ITER_DONE(src)) {
+                c = PW_STRING_ITER_GETCHAR(src);
+                lower_c = pw_char_lower(c);
+                if (lower_c != c ) {
+                    PW_STRING_ITER_PUTCHAR(src, lower_c);
+                }
+                PW_STRING_ITER_INC(src);
+            }
+            return true;
         }
-        ptr += char_size;
-        n--;
+        start_pos++;
+        PW_STRING_ITER_INC(src);
     }
     return true;
 }
 
 [[ nodiscard]] bool pw_string_upper(PwValuePtr str)
 {
-    unsigned n;
-    uint8_t* ptr = _pw_string_start_length(str, &n);
-    uint8_t char_size = _pw_string_char_size(str);
-    bool copied = str->str_embedded;  // normally this should be initialized to false,
-                                      // but we don't have to copy embedded strings
-    while (n) {
-        char32_t c = _pw_get_char(ptr, char_size);
+    pw_assert_string(str);
+
+    if (str->embedded) {
+        // embedded strings never need a copy on write
+        PW_STRING_ITER(src, str);
+        while (!PW_STRING_ITER_DONE(src)) {
+            char32_t c = PW_STRING_ITER_GETCHAR(src);
+            char32_t upper_c = pw_char_upper(c);
+            if (upper_c != c ) {
+                PW_STRING_ITER_PUTCHAR(src, upper_c);
+            }
+            PW_STRING_ITER_INC(src);
+        };
+        return true;
+    }
+
+    unsigned start_pos = 0;
+    PW_STRING_ITER(src, str);
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t c = PW_STRING_ITER_GETCHAR(src);
         char32_t upper_c = pw_char_upper(c);
         if (upper_c != c ) {
-            // copy on write only if it is really necessary
-            if (!copied) {
-                if (!copy_on_write(str)) {
-                    return false;
-                }
-                copied = true;
 
-                // use new ptr
-                unsigned m;
-                ptr = _pw_string_start_length(str, &m);
-                ptr += (m - n) * char_size;
+            // copy string if necessary and proceed
+
+            if (!copy_on_write(str)) {
+                return false;
             }
-            _pw_put_char(ptr, c, char_size);
+            PW_STRING_ITER_RESET_FROM(src, str, start_pos);
+            PW_STRING_ITER_PUTCHAR(src, upper_c);
+            PW_STRING_ITER_INC(src);
+            while (!PW_STRING_ITER_DONE(src)) {
+                c = PW_STRING_ITER_GETCHAR(src);
+                upper_c = pw_char_upper(c);
+                if (upper_c != c ) {
+                    PW_STRING_ITER_PUTCHAR(src, upper_c);
+                }
+                PW_STRING_ITER_INC(src);
+            }
+            return true;
         }
-        ptr += char_size;
-        n--;
+        start_pos++;
+        PW_STRING_ITER_INC(src);
     }
     return true;
 }
@@ -2011,73 +1938,57 @@ void pw_destroy_cstring(CStringPtr* str)
 [[nodiscard]] bool pw_string_split_chr(PwValuePtr str, char32_t splitter, unsigned maxsplit, PwValuePtr result)
 {
     pw_assert_string(str);
-    StrMethods* strmeth = get_str_methods(str);
-
-    unsigned len;
-    uint8_t* ptr = _pw_string_start_length(str, &len);
-    uint8_t char_size = _pw_string_char_size(str);
 
     if (!pw_create_array(result)) {
         return false;;
     }
-    if (len == 0) {
-        return true;
-    }
-
-    uint8_t* start = ptr;
+    uint8_t char_size = str->char_size;
+    PW_STRING_ITER(src, str);
+    uint8_t* substr_start = PW_STRING_ITER_CHARPTR(src);
+    unsigned substr_len = 0;
     unsigned i = 0;
-    unsigned start_i = 0;
-    uint8_t substr_width = 0;
-
-    while (i < len) {
-        char32_t c = _pw_get_char(ptr, char_size);
-        if (c == splitter) {
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t c = PW_STRING_ITER_NEXT(src);
+        i++;
+        if (c != splitter) {
+            substr_len++;
+        } else {
             // create substring
-            unsigned substr_len = i - start_i;
             PwValue substr = PW_NULL;
-            if (!pw_create_empty_string(substr_len, char_width_to_char_size(substr_width), &substr)) {
+            if (!make_empty_string(str->type_id, substr_len, char_size, &substr)) {
                 return false;;
             }
             if (substr_len) {
-                strmeth->copy_to(start, &substr, 0, substr_len);
+                uint8_t* dest = _pw_string_start(&substr);
+                ptrdiff_t n = PW_STRING_ITER_CHARPTR(src) - substr_start;
+                memcpy(dest, substr_start, n);
                 _pw_string_set_length(&substr, substr_len);
             }
             if (!pw_array_append(result, &substr)) {
                 return false;;
             }
-
-            start_i = i + 1;
-            start = ptr + char_size;
-            substr_width = 0;
-
-            if (maxsplit) {
-                if (0 == --maxsplit) {
-                    do {
-                        ptr += char_size;
-                        c = _pw_get_char(ptr, char_size);
-                        substr_width = update_char_width(substr_width, c);
-                    } while (++i < len);
-                    break;
-                }
+            substr_start = PW_STRING_ITER_CHARPTR(src);
+            if (maxsplit && 0 == --maxsplit) {
+                substr_len = pw_strlen(str) - i;
+                break;
             }
+            substr_len = 0;
         }
-        i++;
-        ptr += char_size;
-        substr_width = update_char_width(substr_width, c);
     }
-    // create final substring
-    {
-        unsigned substr_len = i - start_i;
+    if (substr_start < PW_STRING_ITER_ENDPTR(src)) {
+        // create final substring
         PwValue substr = PW_NULL;
-        if (!pw_create_empty_string(substr_len, char_width_to_char_size(substr_width), &substr)) {
+        if (!make_empty_string(str->type_id, substr_len, char_size, &substr)) {
             return false;;
         }
         if (substr_len) {
-            strmeth->copy_to(start, &substr, 0, substr_len);
+            uint8_t* dest = _pw_string_start(&substr);
+            ptrdiff_t n = PW_STRING_ITER_ENDPTR(src) - substr_start;
+            memcpy(dest, substr_start, n);
             _pw_string_set_length(&substr, substr_len);
         }
         if (!pw_array_append(result, &substr)) {
-            return false;;
+            return false;
         }
     }
     return true;
@@ -2085,74 +1996,58 @@ void pw_destroy_cstring(CStringPtr* str)
 
 [[nodiscard]] bool pw_string_rsplit_chr(PwValuePtr str, char32_t splitter, unsigned maxsplit, PwValuePtr result)
 {
-    pw_assert_string(str);
-    StrMethods* strmeth = get_str_methods(str);
-
-    unsigned len;
-    uint8_t* start = _pw_string_start_length(str, &len);
-    uint8_t char_size = _pw_string_char_size(str);
-
     if (!pw_create_array(result)) {
         return false;;
     }
-    if (len == 0) {
-        return true;
-    }
-
-    unsigned i = len - 1;
-    unsigned end_i = i;
-    uint8_t substr_width = 0;
-
-    start += i * char_size;
-    while (i) {
-        char32_t c = _pw_get_char(start, char_size);
-        if (c == splitter) {
+    uint8_t char_size = str->char_size;
+    unsigned i = pw_strlen(str);
+    PW_STRING_ITER_REVERSE(src, str);
+    uint8_t* substr_end = PW_STRING_ITER_CHARPTR(src);
+    unsigned substr_len = 0;
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t c = PW_STRING_ITER_PREV(src);
+        i--;
+        if (c != splitter) {
+            substr_len++;
+        } else {
             // create substring
-            unsigned substr_len = end_i - i;
             PwValue substr = PW_NULL;
-            if (!pw_create_empty_string(substr_len, char_width_to_char_size(substr_width), &substr)) {
+            if (!make_empty_string(str->type_id, substr_len, char_size, &substr)) {
                 return false;;
             }
             if (substr_len) {
-                strmeth->copy_to(start + char_size, &substr, 0, substr_len);
+                uint8_t* substr_start = PW_STRING_ITER_CHARPTR(src) + char_size;
+                uint8_t* dest = _pw_string_start(&substr);
+                ptrdiff_t n = substr_end - substr_start;
+                memcpy(dest, substr_start, n);
                 _pw_string_set_length(&substr, substr_len);
             }
             if (!pw_array_insert(result, 0, &substr)) {
                 return false;;
             }
-
-            end_i = i - 1;
-            substr_width = 0;
-
-            if (maxsplit) {
-                if (0 == --maxsplit) {
-                    do {
-                        i--;
-                        start -= char_size;
-                        c = _pw_get_char(start, char_size);
-                        substr_width = update_char_width(substr_width, c);
-                    } while (i);
-                    break;
-                }
+            substr_end = PW_STRING_ITER_CHARPTR(src);
+            if (maxsplit && 0 == --maxsplit) {
+                substr_len = i;
+                break;
             }
+            substr_len = 0;
         }
-        i--;
-        start -= char_size;
-        substr_width = update_char_width(substr_width, c);
     }
-    // create final substring
-    {
-        unsigned substr_len = end_i + 1;
+    if (substr_end > PW_STRING_ITER_ENDPTR(src)) {
+        // create final substring
         PwValue substr = PW_NULL;
-        if (!pw_create_empty_string(substr_len, char_width_to_char_size(substr_width), &substr)) {
+        if (!make_empty_string(str->type_id, substr_len, char_size, &substr)) {
             return false;;
         }
         if (substr_len) {
-            strmeth->copy_to(start, &substr, 0, substr_len);
+            uint8_t* substr_start = PW_STRING_ITER_ENDPTR(src);
+            uint8_t* dest = _pw_string_start(&substr);
+            ptrdiff_t n = substr_end - substr_start;
+            memcpy(dest, substr_start, n);
             _pw_string_set_length(&substr, substr_len);
         }
         if (!pw_array_insert(result, 0, &substr)) {
-            return false;;
+            return false;
         }
     }
     return true;
@@ -2190,11 +2085,8 @@ void pw_destroy_cstring(CStringPtr* str)
         }
         uint8_t char_size;
         if (pw_is_string(&arg)) {
-            result_len += _pw_string_length(&arg);
-            char_size = _pw_string_char_size(&arg);
-
-        } else if (pw_is_charptr(&arg)) {
-            result_len += _pw_charptr_strlen2(&arg, &char_size);
+            result_len += pw_strlen(&arg);
+            char_size = arg.char_size;
 
         } else {
             // XXX to_string?
@@ -2235,55 +2127,44 @@ void pw_destroy_cstring(CStringPtr* str)
 unsigned pw_string_skip_spaces(PwValuePtr str, unsigned position)
 {
     pw_assert_string(str);
-    uint8_t char_size = _pw_string_char_size(str);
-    unsigned length;
-    uint8_t* ptr = _pw_string_start_length(str, &length);
-    ptr += position * char_size;
-    while (position < length) {
-        char32_t c = _pw_get_char(ptr, char_size);
+    PW_STRING_ITER_FROM(src, str, position);
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t c = PW_STRING_ITER_NEXT(src);
         if (!pw_isspace(c)) {
-            return position;
+            break;
         }
         position++;
-        ptr += char_size;
     }
-    return length;
+    return position;
 }
 
 unsigned pw_string_skip_chars(PwValuePtr str, unsigned position, char32_t* skipchars)
 {
     pw_assert_string(str);
-    uint8_t char_size = _pw_string_char_size(str);
-    unsigned length;
-    uint8_t* ptr = _pw_string_start_length(str, &length);
-    ptr += position * char_size;
-    while (position < length) {
-        char32_t c = _pw_get_char(ptr, char_size);
-        if (!u32_strchr(skipchars, c)) {
-            return position;
+    PW_STRING_ITER_FROM(src, str, position);
+    while (!PW_STRING_ITER_DONE(src)) {
+        char32_t c = PW_STRING_ITER_NEXT(src);
+        if (!utf32_strchr(skipchars, c)) {
+            break;
         }
         position++;
-        ptr += char_size;
     }
-    return length;
+    return position;
 }
 
 #define PW_STRING_IS(str, is_something)  \
 {  \
     pw_assert_string(str);  \
-    unsigned length;  \
-    uint8_t* ptr = _pw_string_start_length((str), &length);  \
-    if (length == 0) {  \
+    PW_STRING_ITER(src, str);  \
+    if (PW_STRING_ITER_DONE(src)) {  \
         return false;  \
     }  \
-    uint8_t char_size = _pw_string_char_size(str);  \
-    for (unsigned i = 0; i < length; i++) {  \
-        char32_t c = _pw_get_char(ptr, char_size);  \
+    do {  \
+        char32_t c = PW_STRING_ITER_NEXT(src);  \
         if (!is_something(c)) {  \
             return false;  \
         }  \
-        ptr += char_size;  \
-    }  \
+    } while (!PW_STRING_ITER_DONE(src));  \
     return true;  \
 }
 

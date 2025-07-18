@@ -7,6 +7,7 @@
 
 #include <libpussy/allocator.h>
 
+#include <pw_assert.h>
 #include <pw_helpers.h>
 
 #ifdef __cplusplus
@@ -27,18 +28,13 @@ extern "C" {
 #define PwTypeId_DateTime    6U
 #define PwTypeId_Timestamp   7U
 #define PwTypeId_Ptr         8U  // container for void*
-#define PwTypeId_CharPtr     9U  // container for pointers to static C strings
-#define PwTypeId_String     10U
-#define PwTypeId_Struct     11U  // the base for reference counted data
-#define PwTypeId_Compound   12U  // the base for values that may contain circular references
-#define PwTypeId_Status     13U  // value_data is optional
-#define PwTypeId_Iterator   14U
-#define PwTypeId_Array      15U
-#define PwTypeId_Map        16U
-
-// char* sub-types
-#define PwSubType_CharPtr    0
-#define PwSubType_Char32Ptr  1
+#define PwTypeId_String      9U
+#define PwTypeId_Struct     10U  // the base for reference counted data
+#define PwTypeId_Compound   11U  // the base for values that may contain circular references
+#define PwTypeId_Status     12U  // value_data is optional
+#define PwTypeId_Iterator   13U
+#define PwTypeId_Array      14U
+#define PwTypeId_Map        15U
 
 // limits
 #define PW_SIGNED_MAX  0x7fff'ffff'ffff'ffffLL
@@ -54,7 +50,6 @@ extern "C" {
 #define pw_is_datetime(value)  pw_is_subtype((value), PwTypeId_DateTime)
 #define pw_is_timestamp(value) pw_is_subtype((value), PwTypeId_Timestamp)
 #define pw_is_ptr(value)       pw_is_subtype((value), PwTypeId_Ptr)
-#define pw_is_charptr(value)   pw_is_subtype((value), PwTypeId_CharPtr)
 #define pw_is_string(value)    pw_is_subtype((value), PwTypeId_String)
 #define pw_is_struct(value)    pw_is_subtype((value), PwTypeId_Struct)
 #define pw_is_compound(value)  pw_is_subtype((value), PwTypeId_Compound)
@@ -72,7 +67,6 @@ extern "C" {
 #define pw_assert_datetime(value)  pw_assert(pw_is_datetime(value))
 #define pw_assert_timestamp(value) pw_assert(pw_is_timestamp(value))
 #define pw_assert_ptr(value)       pw_assert(pw_is_ptr     (value))
-#define pw_assert_charptr(value)   pw_assert(pw_is_charptr (value))
 #define pw_assert_string(value)    pw_assert(pw_is_string  (value))
 #define pw_assert_struct(value)    pw_assert(pw_is_struct  (value))
 #define pw_assert_compound(value)  pw_assert(pw_is_compound(value))
@@ -106,8 +100,9 @@ typedef uint64_t   PwType_Unsigned;
 typedef double     PwType_Float;
 
 typedef struct {
+    // allocated string data for fixed char size strings
     unsigned refcount;
-    uint32_t capacity;
+    uint32_t capacity;  // in characters
     uint8_t data[];
 } _PwStringData;
 
@@ -151,19 +146,11 @@ union __PwValue {
     };
 
     struct {
-        // charptr and ptr
-        PwTypeId /* uint16_t */ _charptr_type_id;
-        uint8_t charptr_subtype; // see PW_CHAR*PTR constants
-        uint8_t  _charptr_padding_1;
-        uint32_t _charptr_pagging_2;
-        union {
-            // C string pointers for PwType_CharPtr
-            char8_t*  charptr;
-            char32_t* char32ptr;
-
-            // void*
-            void* ptr;
-        };
+        // ptr
+        PwTypeId /* uint16_t */ _ptr_type_id;
+        uint16_t _ptr_padding_1;
+        uint32_t _ptr_pagging_2;
+        void* ptr;
     };
 
     struct {
@@ -195,10 +182,11 @@ union __PwValue {
 
     struct {
         // embedded string
-        PwTypeId /* uint16_t */ _emb_string_type_id;
-        uint8_t str_embedded:1,       // the string data is embedded into PwValue
-                str_char_size:2;
-        uint8_t str_embedded_length;  // length of embedded string
+        PwTypeId /* uint16_t */ _e_string_type_id;
+        uint8_t char_size: 3,
+                embedded:1,
+                _e_allocated:1;
+        uint8_t embedded_length;
         union {
             uint8_t  str_1[12];
             uint16_t str_2[6];
@@ -209,12 +197,24 @@ union __PwValue {
 
     struct {
         // allocated string
-        PwTypeId /* uint16_t */ _string_type_id;
-        uint8_t _x_str_embedded:1,   // zero for allocated string
-                _x_str_char_size:2;
-        uint8_t _str_padding;
-        uint32_t str_length;
+        PwTypeId /* uint16_t */ _a_string_type_id;
+        uint8_t _a_char_size:3,
+                _a_embedded:1,
+                allocated:1;
+        uint8_t _a_padding;
+        uint32_t length;
         _PwStringData* string_data;
+    };
+
+    struct {
+        // static 0-terminated string
+        PwTypeId /* uint16_t */ _s_string_type_id;
+        uint8_t _s_char_size:3,
+                _s_embedded:1,
+                _s_allocated:1;
+        uint8_t _s_padding;
+        uint32_t _s_length;
+        void* char_ptr;
     };
 
     struct {
@@ -251,15 +251,13 @@ typedef union __PwValue _PwValue;
 typedef _PwValue* PwValuePtr;
 
 // make sure _PwValue structure is correct
-static_assert( offsetof(_PwValue, charptr_subtype) == 2 );
-
-static_assert( offsetof(_PwValue, bool_value) == 8 );
-static_assert( offsetof(_PwValue, charptr)    == 8 );
+static_assert( offsetof(_PwValue, bool_value)  == 8 );
+static_assert( offsetof(_PwValue, ptr)         == 8 );
 static_assert( offsetof(_PwValue, struct_data) == 8 );
 static_assert( offsetof(_PwValue, status_data) == 8 );
 static_assert( offsetof(_PwValue, string_data) == 8 );
 
-static_assert( offsetof(_PwValue, str_embedded_length) == 3 );
+static_assert( offsetof(_PwValue, embedded_length) == 3 );
 static_assert( offsetof(_PwValue, str_1) == 4 );
 static_assert( offsetof(_PwValue, str_2) == 4 );
 static_assert( offsetof(_PwValue, str_3) == 4 );
@@ -529,32 +527,44 @@ void pw_dump_types(FILE* fp);
         v;  \
     })
 
-#define PW_STRING(len, initializer)  \
-    /* declare String variable, character size 1 byte, up to 12 chars */  \
+#define PW_STRING(initializer)  \
+    /* Embedded string, character size 1 byte, up to 12 chars */  \
     {  \
-        ._emb_string_type_id = PwTypeId_String,  \
-        .str_embedded = 1,  \
-        .str_char_size = 0,  \
-        .str_embedded_length = (len),  \
+        ._e_string_type_id = PwTypeId_String,  \
+        .embedded = 1,  \
+        .char_size = 1,  \
+        .embedded_length = sizeof(initializer) - 1,  \
         .str_1 = initializer  \
     }
 
-#define PwString(len, initializer)  \
+#define PwString(initializer)  \
     /* make String rvalue, character size 1 byte, up to 12 chars */  \
     ({  \
-        _PwValue s = PW_STRING((len), initializer);  \
+        _PwValue s = PW_STRING(initializer);  \
         s;  \
     })
 
-#define PW_STRING2(len, initializer)  \
-    /* declare String variable, character size 2 bytes, up to 6 chars */  \
+#define PW_STRING_ASCII(initializer)  \
+    /* Static ASCII string */  \
     {  \
-        ._emb_string_type_id = PwTypeId_String,  \
-        .str_embedded = 1,  \
-        .str_char_size = 1,  \
-        .str_embedded_length = (len),  \
-        .str_2 = initializer  \
+        ._s_string_type_id = PwTypeId_String,  \
+        ._s_char_size = 1,  \
+        ._s_length = sizeof(initializer) - 1,  \
+        .char_ptr = initializer  \
     }
+
+#define PW_STRING_UTF32(initializer)  \
+    /* Static UTF-32 string */  \
+    {  \
+        ._s_string_type_id = PwTypeId_String,  \
+        ._s_char_size = 4,  \
+        ._s_length = (((unsigned) sizeof(initializer)) - 4) / 4,  \
+        .char_ptr = initializer  \
+    }
+
+[[nodiscard]] _PwValue PwStringAscii(char*     initializer);
+[[nodiscard]] _PwValue PwStringUtf8 (char8_t*  initializer);
+[[nodiscard]] _PwValue PwStringUtf32(char32_t* initializer);
 
 #define PW_DATETIME  \
     {  \
@@ -580,37 +590,9 @@ void pw_dump_types(FILE* fp);
         v;  \
     })
 
-#define PW_CHARPTR(initializer)  \
-    {  \
-        ._charptr_type_id = PwTypeId_CharPtr,  \
-        .charptr_subtype = PwSubType_CharPtr,  \
-        .charptr = (char8_t*) (initializer)  \
-    }
-
-#define PwCharPtr(initializer)  \
-    /* make CharPtr rvalue */  \
-    ({  \
-        _PwValue v = PW_CHARPTR(initializer);  \
-        v;  \
-    })
-
-#define PW_CHAR32PTR(initializer)  \
-    {  \
-        ._charptr_type_id = PwTypeId_CharPtr,  \
-        .charptr_subtype = PwSubType_Char32Ptr,  \
-        .char32ptr = (initializer)  \
-    }
-
-#define PwChar32Ptr(initializer)  \
-    /* make Char32Ptr rvalue */  \
-    ({  \
-        _PwValue v = PW_CHAR32PTR(initializer);  \
-        v;  \
-    })
-
 #define PW_PTR(initializer)  \
     {  \
-        ._charptr_type_id = PwTypeId_Ptr,  \
+        ._ptr_type_id = PwTypeId_Ptr,  \
         .ptr = (initializer)  \
     }
 
@@ -856,8 +838,8 @@ bool _pw_abandon(PwValuePtr parent, PwValuePtr child);
                  float: _pwc_equal_float,      \
                 double: _pwc_equal_double,     \
                  char*: _pwc_equal_ascii,      \
-              char8_t*: _pwc_equal_u8,         \
-             char32_t*: _pwc_equal_u32,        \
+              char8_t*: _pwc_equal_utf8,       \
+             char32_t*: _pwc_equal_utf32,      \
             PwValuePtr: _pw_equal              \
     )((a), (b))
 /*
@@ -865,22 +847,22 @@ bool _pw_abandon(PwValuePtr parent, PwValuePtr child);
  */
 
 [[nodiscard]] static inline bool _pwc_equal_null     (PwValuePtr a, nullptr_t          b) { return pw_is_null(a); }
-[[nodiscard]] static inline bool _pwc_equal_bool     (PwValuePtr a, bool               b) { _PwValue v = PW_BOOL(b);      return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_char     (PwValuePtr a, char               b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_uchar    (PwValuePtr a, unsigned char      b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_short    (PwValuePtr a, short              b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_ushort   (PwValuePtr a, unsigned short     b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_int      (PwValuePtr a, int                b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_uint     (PwValuePtr a, unsigned int       b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_long     (PwValuePtr a, long               b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_ulong    (PwValuePtr a, unsigned long      b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_longlong (PwValuePtr a, long long          b) { _PwValue v = PW_SIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_ulonglong(PwValuePtr a, unsigned long long b) { _PwValue v = PW_UNSIGNED(b);  return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_float    (PwValuePtr a, float              b) { _PwValue v = PW_FLOAT(b);     return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_double   (PwValuePtr a, double             b) { _PwValue v = PW_FLOAT(b);     return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_u8       (PwValuePtr a, char8_t*           b) { _PwValue v = PW_CHARPTR(b);   return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_u32      (PwValuePtr a, char32_t*          b) { _PwValue v = PW_CHAR32PTR(b); return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_ascii    (PwValuePtr a, char*              b) { return _pwc_equal_u8(a, (char8_t*) b); }
+[[nodiscard]] static inline bool _pwc_equal_bool     (PwValuePtr a, bool               b) { _PwValue v = PW_BOOL(b);       return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_char     (PwValuePtr a, char               b) { _PwValue v = PW_SIGNED(b);     return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_uchar    (PwValuePtr a, unsigned char      b) { _PwValue v = PW_UNSIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_short    (PwValuePtr a, short              b) { _PwValue v = PW_SIGNED(b);     return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_ushort   (PwValuePtr a, unsigned short     b) { _PwValue v = PW_UNSIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_int      (PwValuePtr a, int                b) { _PwValue v = PW_SIGNED(b);     return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_uint     (PwValuePtr a, unsigned int       b) { _PwValue v = PW_UNSIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_long     (PwValuePtr a, long               b) { _PwValue v = PW_SIGNED(b);     return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_ulong    (PwValuePtr a, unsigned long      b) { _PwValue v = PW_UNSIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_longlong (PwValuePtr a, long long          b) { _PwValue v = PW_SIGNED(b);     return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_ulonglong(PwValuePtr a, unsigned long long b) { _PwValue v = PW_UNSIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_float    (PwValuePtr a, float              b) { _PwValue v = PW_FLOAT(b);      return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_double   (PwValuePtr a, double             b) { _PwValue v = PW_FLOAT(b);      return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_ascii    (PwValuePtr a, char*              b) {  PwValue v = PwStringAscii(b); return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_utf8     (PwValuePtr a, char8_t*           b) {  PwValue v = PwStringUtf8(b);  return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pwc_equal_utf32    (PwValuePtr a, char32_t*          b) {  PwValue v = PwStringUtf32(b); return _pw_equal(a, &v); }
 
 #ifdef __cplusplus
 }

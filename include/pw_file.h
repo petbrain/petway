@@ -138,29 +138,31 @@ typedef struct {
 
 #define pw_file_open(file_name, flags, mode, result) _Generic((file_name), \
              char*: _pw_file_open_ascii,  \
-          char8_t*: _pw_file_open_u8,     \
-         char32_t*: _pw_file_open_u32,    \
+          char8_t*: _pw_file_open_utf8,   \
+         char32_t*: _pw_file_open_utf32,  \
         PwValuePtr: _pw_file_open         \
     )((file_name), (flags), (mode), (result))
 
 [[nodiscard]] bool _pw_file_open(PwValuePtr file_name, int flags, mode_t mode, PwValuePtr result);
 
-[[nodiscard]] static inline bool _pw_file_open_u8(char8_t*  file_name, int flags, mode_t mode, PwValuePtr result)
+[[nodiscard]] static inline bool _pw_file_open_ascii(char*  file_name, int flags, mode_t mode, PwValuePtr result)
 {
-    _PwValue fname = PW_CHARPTR(file_name);
+    _PwValue fname = PwStringAscii(file_name);
     return _pw_file_open(&fname, flags, mode, result);
 }
 
-[[nodiscard]] static inline bool _pw_file_open_u32(char32_t* file_name, int flags, mode_t mode, PwValuePtr result)
+[[nodiscard]] static inline bool _pw_file_open_utf8(char8_t*  file_name, int flags, mode_t mode, PwValuePtr result)
 {
-    _PwValue fname = PW_CHAR32PTR(file_name);
+    PwValue fname = PwStringUtf8(file_name);
     return _pw_file_open(&fname, flags, mode, result);
 }
 
-[[nodiscard]] static inline bool _pw_file_open_ascii(char* file_name, int flags, mode_t mode, PwValuePtr result)
+[[nodiscard]] static inline bool _pw_file_open_utf32(char32_t* file_name, int flags, mode_t mode, PwValuePtr result)
 {
-    return _pw_file_open_u8((char8_t*) file_name, flags, mode, result);
+    _PwValue fname = PwStringUtf32(file_name);
+    return _pw_file_open(&fname, flags, mode, result);
 }
+
 
 [[nodiscard]] bool pw_file_from_fd(int fd, bool take_ownership, PwValuePtr result);
 

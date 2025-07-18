@@ -3,7 +3,6 @@
 
 #include "include/pw.h"
 #include "src/pw_alloc.h"
-#include "src/pw_charptr_internal.h"
 #include "src/pw_compound_internal.h"
 #include "src/pw_map_internal.h"
 #include "src/pw_struct_internal.h"
@@ -572,9 +571,6 @@ static_assert((sizeof(_PwCompoundData) & (alignof(_PwMap) - 1)) == 0);
             pw_set_status(pw_clone(&key));
             goto failure;
         }
-        if (!pw_charptr_to_string_inplace(&key)) {
-            goto failure;
-        }
         PwValue value = va_arg(ap, _PwValue);
         if (pw_is_status(&value)) {
             if (pw_is_va_end(&value)) {
@@ -585,9 +581,6 @@ static_assert((sizeof(_PwCompoundData) & (alignof(_PwMap) - 1)) == 0);
                 pw_set_status(pw_clone(&value));
                 goto failure;
             }
-        }
-        if (!pw_charptr_to_string_inplace(&value)) {
-            goto failure;
         }
         if (!update_map(map, &key, &value)) {
             goto failure;

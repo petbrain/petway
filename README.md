@@ -11,6 +11,8 @@ The following environment variables are honoured by cmake:
 * `DEBUG`: debug build (XXX not fully implementeded in cmake yet)
 * `PW_WITHOUT_ICU`: if defined (the value does not matter), build without ICU dependency
 
+The library is built with Clang 19. Previous versions may have bugs in generics. Not tested with GCC yet.
+
 ## PW values
 
 All values are 128 bit wide. The basic values, such as null, boolean, integer, etc.
@@ -71,7 +73,7 @@ As you might already guess, `ancestor_id` field implies type hierarchy.
    +------+-----+-------+---------+---------+----------+--------+
    |      |     |       |         |         |          |        |
 PwNull PwBool PwInt  PwFloat PwDateTime,   PwPtr,   PwString PwStruct
-                |            PwTimestamp  PwCharPtr             |
+                |            PwTimestamp                        |
                 |                                               |
            +----+----+                 +----------+---------+---+-----+
            |         |                 |          |         |         |
@@ -82,16 +84,14 @@ PwNull PwBool PwInt  PwFloat PwDateTime,   PwPtr,   PwString PwStruct
                                                             PwArray  PwMap
 ```
 
-Integral types `PwNull`, `PwBool`, `PwInt`, `PwFloat`, `PwPtr`, and `PwCharPtr`
-are self-contained and do not contain pointers to allocated memory blocks.
-Actually, `PwPtr` and `PwCharPtr` may do, but it's entirely up to the user
+Integral types `PwNull`, `PwBool`, `PwInt`, `PwFloat`, and `PwPtr`
+are self-contained and have no pointers to allocated memory blocks.
+Actually, `PwPtr` may have, but it's entirely up to the user
 to manage that.
 
 `PwString` may allocate memory if string does not fit into 128-bit structure.
 For single-byte character this limit is 12 which is more than double of average
 length of English word.
-
-`PwCharPtr`: to be revised, its initial purpose was to facilitates working with null-terminated C strings.
 
 `Struct` type is the basic type for structured and `Compound` types.
 It handles data allocation and reference counting, although allocated data
@@ -141,31 +141,39 @@ If a method of interface wants to call super method, it should do this way:
 
 ## Strings
 
-PW strings support any character width, from 1 to 4 bytes.
-The initial width can be specified when string is created.
-It is automagically expanded when necessary.
+PW strings can be embedded, allocated, and static.
+The size of character can vary from 1 to 4 for embedded and allocated strings.
+For static strings it can be only 1 or 4.
 
-Short strings are stored in 128-bit wide PW value structure:
-* 1 byte wide: up to 12 characters
-* 2 byte wide: up to 6 characters
-* 3 byte wide: up to 4 characters
-* 4 byte wide: up to 3 characters
+Embedded strings are short strings that fit into 128-bit wide PW value structure depending on
+character size:
+* 1 byte: up to 12 characters
+* 2 bytes: up to 6 characters
+* 3 bytes: up to 4 characters
+* 4 bytes: up to 3 characters
 
-Longer strings are stored in dynamically allocated memory blocks.
-Blocks contain reference count, so making a copy is fast operation (`clone`, in terms of PW).
+Longer strings are stored in dynamically allocated memory.
+Allocated strings are reference counted, so making a copy is a fast operation (`clone`, in terms of PW).
 
-Strings are mutable, but they are copied on write.
-In-place modifications are allowed only for strings with reference count equal to one.
+Static strings ease interfacing with C code.
+Only `char*` and `char32_t*` are supported.
+Wide character type is not supported to avoid the hell with surrogate pairs.
+Hardcoded strings are usually short so using 4 bytes per character is not a big deal.
+Anyway, characters are always expanded to `char32_t` inside string functions that compare them.
+
+Strings are mutable, even static, but they are copied on write.
 
 The length of string is always 32 bit wide, even on ILP64.
 
 ### COW rules for strings
 
-* if a string is copied, only refcount is incremented
-* if a string is about to be modified and refcount is 1, it is modified in place.
-* if a string is about to be modified and refcount is more than 1, a copy is created
+* if string is cloned, only refcount is incremented
+* if string to be modified is in UTF-8, it is converted to fixed character width. Rationale: COW takes place
+  when working with character positions which is less efficient for UTF-8
+* if string is to be modified and refcount is 1, it is modified in place.
+* if string is to be modified and refcount is more than 1, a copy is created
   with refcount 1 and then modified in place.
-* string capacity is preserved on copy
+* string capacity is not preserved on copy
 
 ## Iterators
 

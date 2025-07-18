@@ -39,7 +39,6 @@ extern "C" {
 [[nodiscard]] bool pw_map_update(PwValuePtr map, PwValuePtr key, PwValuePtr value);
 /*
  * `key` is deeply copied and `value` is cloned before adding.
- * CharPtr values are converted to PW strings.
  */
 
 [[nodiscard]] bool _pw_map_update_va(PwValuePtr map, ...);
@@ -78,25 +77,22 @@ extern "C" {
                  float: _pw_map_has_key_float,     \
                 double: _pw_map_has_key_float,     \
                  char*: _pw_map_has_key_ascii,     \
-              char8_t*: _pw_map_has_key_u8,        \
-             char32_t*: _pw_map_has_key_u32,       \
+              char8_t*: _pw_map_has_key_utf8,      \
+             char32_t*: _pw_map_has_key_utf32,     \
             PwValuePtr: _pw_map_has_key            \
     )((map), (key))
 
 bool _pw_map_has_key(PwValuePtr map, PwValuePtr key);
 
-[[nodiscard]] static inline bool _pw_map_has_key_null    (PwValuePtr map, PwType_Null     key) { _PwValue v = PW_NULL;           return _pw_map_has_key(map, &v); }
-[[nodiscard]] static inline bool _pw_map_has_key_bool    (PwValuePtr map, PwType_Bool     key) { _PwValue v = PW_BOOL(key);      return _pw_map_has_key(map, &v); }
-[[nodiscard]] static inline bool _pw_map_has_key_signed  (PwValuePtr map, PwType_Signed   key) { _PwValue v = PW_SIGNED(key);    return _pw_map_has_key(map, &v); }
-[[nodiscard]] static inline bool _pw_map_has_key_unsigned(PwValuePtr map, PwType_Unsigned key) { _PwValue v = PW_UNSIGNED(key);  return _pw_map_has_key(map, &v); }
-[[nodiscard]] static inline bool _pw_map_has_key_float   (PwValuePtr map, PwType_Float    key) { _PwValue v = PW_FLOAT(key);     return _pw_map_has_key(map, &v); }
-[[nodiscard]] static inline bool _pw_map_has_key_u8      (PwValuePtr map, char8_t*        key) { _PwValue v = PW_CHARPTR(key);   return _pw_map_has_key(map, &v); }
-[[nodiscard]] static inline bool _pw_map_has_key_u32     (PwValuePtr map, char32_t*       key) { _PwValue v = PW_CHAR32PTR(key); return _pw_map_has_key(map, &v); }
+[[nodiscard]] static inline bool _pw_map_has_key_null    (PwValuePtr map, PwType_Null     key) { _PwValue v = PW_NULL;            return _pw_map_has_key(map, &v); }
+[[nodiscard]] static inline bool _pw_map_has_key_bool    (PwValuePtr map, PwType_Bool     key) { _PwValue v = PW_BOOL(key);       return _pw_map_has_key(map, &v); }
+[[nodiscard]] static inline bool _pw_map_has_key_signed  (PwValuePtr map, PwType_Signed   key) { _PwValue v = PW_SIGNED(key);     return _pw_map_has_key(map, &v); }
+[[nodiscard]] static inline bool _pw_map_has_key_unsigned(PwValuePtr map, PwType_Unsigned key) { _PwValue v = PW_UNSIGNED(key);   return _pw_map_has_key(map, &v); }
+[[nodiscard]] static inline bool _pw_map_has_key_float   (PwValuePtr map, PwType_Float    key) { _PwValue v = PW_FLOAT(key);      return _pw_map_has_key(map, &v); }
+[[nodiscard]] static inline bool _pw_map_has_key_ascii   (PwValuePtr map, char*           key) {  PwValue v = PwStringAscii(key); return _pw_map_has_key(map, &v); }
+[[nodiscard]] static inline bool _pw_map_has_key_utf8    (PwValuePtr map, char8_t*        key) {  PwValue v = PwStringUtf8(key);  return _pw_map_has_key(map, &v); }
+[[nodiscard]] static inline bool _pw_map_has_key_utf32   (PwValuePtr map, char32_t*       key) {  PwValue v = PwStringUtf32(key); return _pw_map_has_key(map, &v); }
 
-[[nodiscard]] static inline bool _pw_map_has_key_ascii(PwValuePtr map, char* key)
-{
-    return _pw_map_has_key_u8(map, (char8_t*) key);
-}
 
 /****************************************************************
  * Get value by `key`. Return PW_ERROR_NO_KEY if `key`
@@ -119,25 +115,22 @@ bool _pw_map_has_key(PwValuePtr map, PwValuePtr key);
                  float: _pw_map_get_float,     \
                 double: _pw_map_get_float,     \
                  char*: _pw_map_get_ascii,     \
-              char8_t*: _pw_map_get_u8,        \
-             char32_t*: _pw_map_get_u32,       \
+              char8_t*: _pw_map_get_utf8,      \
+             char32_t*: _pw_map_get_utf32,     \
             PwValuePtr: _pw_map_get            \
     )((map), (key), (result))
 
 [[nodiscard]] bool _pw_map_get(PwValuePtr map, PwValuePtr key, PwValuePtr result);
 
-[[nodiscard]] static inline bool _pw_map_get_null    (PwValuePtr map, PwType_Null     key, PwValuePtr result) { _PwValue v = PW_NULL;           return _pw_map_get(map, &v, result); }
-[[nodiscard]] static inline bool _pw_map_get_bool    (PwValuePtr map, PwType_Bool     key, PwValuePtr result) { _PwValue v = PW_BOOL(key);      return _pw_map_get(map, &v, result); }
-[[nodiscard]] static inline bool _pw_map_get_signed  (PwValuePtr map, PwType_Signed   key, PwValuePtr result) { _PwValue v = PW_SIGNED(key);    return _pw_map_get(map, &v, result); }
-[[nodiscard]] static inline bool _pw_map_get_unsigned(PwValuePtr map, PwType_Unsigned key, PwValuePtr result) { _PwValue v = PW_UNSIGNED(key);  return _pw_map_get(map, &v, result); }
-[[nodiscard]] static inline bool _pw_map_get_float   (PwValuePtr map, PwType_Float    key, PwValuePtr result) { _PwValue v = PW_FLOAT(key);     return _pw_map_get(map, &v, result); }
-[[nodiscard]] static inline bool _pw_map_get_u8      (PwValuePtr map, char8_t*        key, PwValuePtr result) { _PwValue v = PW_CHARPTR(key);   return _pw_map_get(map, &v, result); }
-[[nodiscard]] static inline bool _pw_map_get_u32     (PwValuePtr map, char32_t*       key, PwValuePtr result) { _PwValue v = PW_CHAR32PTR(key); return _pw_map_get(map, &v, result); }
+[[nodiscard]] static inline bool _pw_map_get_null    (PwValuePtr map, PwType_Null     key, PwValuePtr result) { _PwValue v = PW_NULL;            return _pw_map_get(map, &v, result); }
+[[nodiscard]] static inline bool _pw_map_get_bool    (PwValuePtr map, PwType_Bool     key, PwValuePtr result) { _PwValue v = PW_BOOL(key);       return _pw_map_get(map, &v, result); }
+[[nodiscard]] static inline bool _pw_map_get_signed  (PwValuePtr map, PwType_Signed   key, PwValuePtr result) { _PwValue v = PW_SIGNED(key);     return _pw_map_get(map, &v, result); }
+[[nodiscard]] static inline bool _pw_map_get_unsigned(PwValuePtr map, PwType_Unsigned key, PwValuePtr result) { _PwValue v = PW_UNSIGNED(key);   return _pw_map_get(map, &v, result); }
+[[nodiscard]] static inline bool _pw_map_get_float   (PwValuePtr map, PwType_Float    key, PwValuePtr result) { _PwValue v = PW_FLOAT(key);      return _pw_map_get(map, &v, result); }
+[[nodiscard]] static inline bool _pw_map_get_ascii   (PwValuePtr map, char*           key, PwValuePtr result) {  PwValue v = PwStringAscii(key); return _pw_map_get(map, &v, result); }
+[[nodiscard]] static inline bool _pw_map_get_utf8    (PwValuePtr map, char8_t*        key, PwValuePtr result) {  PwValue v = PwStringUtf8(key);  return _pw_map_get(map, &v, result); }
+[[nodiscard]] static inline bool _pw_map_get_utf32   (PwValuePtr map, char32_t*       key, PwValuePtr result) {  PwValue v = PwStringUtf32(key); return _pw_map_get(map, &v, result); }
 
-[[nodiscard]] static inline bool _pw_map_get_ascii(PwValuePtr map, char* key, PwValuePtr result)
-{
-    return _pw_map_get_u8(map, (char8_t*) key, result);
-}
 
 /****************************************************************
  * Delete item from map by `key`.
@@ -161,25 +154,22 @@ bool _pw_map_has_key(PwValuePtr map, PwValuePtr key);
                  float: _pw_map_del_float,     \
                 double: _pw_map_del_float,     \
                  char*: _pw_map_del_ascii,     \
-              char8_t*: _pw_map_del_u8,        \
-             char32_t*: _pw_map_del_u32,       \
+              char8_t*: _pw_map_del_utf8,      \
+             char32_t*: _pw_map_del_utf32,     \
             PwValuePtr: _pw_map_del            \
     )((map), (key))
 
 [[nodiscard]] bool _pw_map_del(PwValuePtr map, PwValuePtr key);
 
-[[nodiscard]] static inline bool _pw_map_del_null    (PwValuePtr map, PwType_Null     key) { _PwValue v = PW_NULL;           return _pw_map_del(map, &v); }
-[[nodiscard]] static inline bool _pw_map_del_bool    (PwValuePtr map, PwType_Bool     key) { _PwValue v = PW_BOOL(key);      return _pw_map_del(map, &v); }
-[[nodiscard]] static inline bool _pw_map_del_signed  (PwValuePtr map, PwType_Signed   key) { _PwValue v = PW_SIGNED(key);    return _pw_map_del(map, &v); }
-[[nodiscard]] static inline bool _pw_map_del_unsigned(PwValuePtr map, PwType_Unsigned key) { _PwValue v = PW_UNSIGNED(key);  return _pw_map_del(map, &v); }
-[[nodiscard]] static inline bool _pw_map_del_float   (PwValuePtr map, PwType_Float    key) { _PwValue v = PW_FLOAT(key);     return _pw_map_del(map, &v); }
-[[nodiscard]] static inline bool _pw_map_del_u8      (PwValuePtr map, char8_t*        key) { _PwValue v = PW_CHARPTR(key);   return _pw_map_del(map, &v); }
-[[nodiscard]] static inline bool _pw_map_del_u32     (PwValuePtr map, char32_t*       key) { _PwValue v = PW_CHAR32PTR(key); return _pw_map_del(map, &v); }
+[[nodiscard]] static inline bool _pw_map_del_null    (PwValuePtr map, PwType_Null     key) { _PwValue v = PW_NULL;            return _pw_map_del(map, &v); }
+[[nodiscard]] static inline bool _pw_map_del_bool    (PwValuePtr map, PwType_Bool     key) { _PwValue v = PW_BOOL(key);       return _pw_map_del(map, &v); }
+[[nodiscard]] static inline bool _pw_map_del_signed  (PwValuePtr map, PwType_Signed   key) { _PwValue v = PW_SIGNED(key);     return _pw_map_del(map, &v); }
+[[nodiscard]] static inline bool _pw_map_del_unsigned(PwValuePtr map, PwType_Unsigned key) { _PwValue v = PW_UNSIGNED(key);   return _pw_map_del(map, &v); }
+[[nodiscard]] static inline bool _pw_map_del_float   (PwValuePtr map, PwType_Float    key) { _PwValue v = PW_FLOAT(key);      return _pw_map_del(map, &v); }
+[[nodiscard]] static inline bool _pw_map_del_ascii   (PwValuePtr map, char*           key) {  PwValue v = PwStringAscii(key); return _pw_map_del(map, &v); }
+[[nodiscard]] static inline bool _pw_map_del_utf8    (PwValuePtr map, char8_t*        key) {  PwValue v = PwStringUtf8(key);  return _pw_map_del(map, &v); }
+[[nodiscard]] static inline bool _pw_map_del_utf32   (PwValuePtr map, char32_t*       key) {  PwValue v = PwStringUtf32(key); return _pw_map_del(map, &v); }
 
-[[nodiscard]] static inline bool _pw_map_del_ascii(PwValuePtr map, char* key)
-{
-    return _pw_map_del_u8(map, (char8_t*) key);
-}
 
 /****************************************************************
  * Misc. functions.

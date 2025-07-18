@@ -1,5 +1,4 @@
 #include "include/pw.h"
-#include "src/pw_charptr_internal.h"
 #include "src/pw_interfaces_internal.h"
 #include "src/pw_string_internal.h"
 #include "src/pw_struct_internal.h"
@@ -18,31 +17,7 @@ typedef struct {
 [[nodiscard]] static bool read_line_inplace(PwValuePtr self, PwValuePtr line);
 
 /****************************************************************
- * Constructors
- */
-
-[[nodiscard]] bool _pw_create_string_io_u8(char8_t* str, PwValuePtr result)
-{
-    _PwValue v = PW_CHARPTR(str);
-    PwStringIOCtorArgs args = { .string = &v };
-    return pw_create2(PwTypeId_StringIO, &args, result);
-}
-
-[[nodiscard]] bool _pw_create_string_io_u32(char32_t* str, PwValuePtr result)
-{
-    _PwValue v = PW_CHAR32PTR(str);
-    PwStringIOCtorArgs args = { .string = &v };
-    return pw_create2(PwTypeId_StringIO, &args, result);
-}
-
-[[nodiscard]] bool _pw_create_string_io(PwValuePtr str, PwValuePtr result)
-{
-    PwStringIOCtorArgs args = { .string = str };
-    return pw_create2(PwTypeId_StringIO, &args, result);
-}
-
-/****************************************************************
- * StringIO type
+ * Basic interface
  */
 
 PwTypeId PwTypeId_StringIO = 0;
@@ -53,24 +28,10 @@ static PwType stringio_type;
 {
     PwStringIOCtorArgs* args = ctor_args;
 
-    PwValue str = PW_NULL;
-    if (args) {
-        if (pw_is_charptr(args->string)) {
-            if (!pw_charptr_to_string(args->string, &str)) {
-                return false;
-            }
-        } else {
-            pw_clone2(args->string, &str);
-        }
-    } else {
-        str = PwString(0, {});
-    }
-    if (!pw_is_string(&str)) {
-        pw_set_status(PwStatus(PW_ERROR_INCOMPATIBLE_TYPE));
-        return false;
-    }
+    pw_expect(String, args->string);
+
     _PwStringIO* sio = get_data_ptr(self);
-    pw_move(&str, &sio->line);
+    pw_clone2(args->string, &sio->line);
     sio->pushback = PwNull();
     return true;
 }
@@ -87,10 +48,8 @@ static void stringio_hash(PwValuePtr self, PwHashContext* ctx)
     _pw_hash_uint64(ctx, self->type_id);
 
     _PwStringIO* sio = get_data_ptr(self);
-    unsigned length = _pw_string_length(&sio->line);
-    if (length) {
-        get_str_methods(&sio->line)->hash(_pw_string_char_ptr(&sio->line, 0), length, ctx);
-    }
+    PwValuePtr line = &sio->line;
+    pw_typeof(line)->hash(line, ctx);
 }
 
 static void stringio_dump(PwValuePtr self, FILE* fp, int first_indent, int next_indent, _PwCompoundChain* tail)
@@ -161,7 +120,9 @@ static void stringio_dump(PwValuePtr self, FILE* fp, int first_indent, int next_
 [[nodiscard]] static bool read_line(PwValuePtr self, PwValuePtr result)
 {
     pw_destroy(result);
-    *result = PwString(0, {});
+    if (!pw_create_empty_string(0, 1, result)) {
+        return false;
+    }
     return read_line_inplace(self, result);
 }
 

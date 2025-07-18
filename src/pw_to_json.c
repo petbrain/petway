@@ -1,8 +1,8 @@
 #include <string.h>
 
 #include "include/pw_to_json.h"
+#include "include/pw_utf.h"
 
-#include "src/pw_charptr_internal.h"
 #include "src/pw_string_internal.h"
 
 // forward declarations
@@ -17,66 +17,33 @@ static unsigned estimate_escaped_length(PwValuePtr str, uint8_t* char_size)
  * Only double quotes and characters with codes < 32 to escape.
  */
 {
-#   define INCREMENT_LENGTH  \
-        if (c == '"'  || c == '\\') {  \
-            length += 2;  \
-        } else if (c < 32) {  \
-            if (c == '\b' || c == '\f' || c == '\n' || c == '\r' || c == '\t') {  \
-                length += 2;  \
-            } else {  \
-                length += 6;  \
-            }  \
-        } else {  \
-            length++;  \
-        }  \
-        width = update_char_width(width, c);
+    pw_assert_string(str);
 
     unsigned length = 0;
-    uint8_t  width = 0;
+    char32_t width = 0;
 
-    if (pw_is_charptr(str)) {
-        switch (str->charptr_subtype) {
-            case PwSubType_CharPtr: {
-                char8_t* ptr = str->charptr;
-                while(*ptr != 0) {
-                    char32_t c = read_utf8_char(&ptr);
-                    if (c != 0xFFFFFFFF) {
-                        INCREMENT_LENGTH
-                    }
-                }
-                break;
+    unsigned n = pw_strlen(str);
+    uint8_t* ptr = _pw_string_start(str);
+    uint8_t chr_sz = str->char_size;
+
+    for (unsigned i = 0; i < n; i++) {
+        char32_t c = _pw_get_char(ptr, chr_sz);
+        if (c == '"'  || c == '\\') {
+            length += 2;
+        } else if (c < 32) {
+            if (c == '\b' || c == '\f' || c == '\n' || c == '\r' || c == '\t') {
+                length += 2;
+            } else {
+                length += 6;
             }
-            case PwSubType_Char32Ptr: {
-                char32_t* ptr = str->char32ptr;
-                for (;;) {
-                    char32_t c = *ptr++;
-                    if (c == 0) {
-                        break;
-                    }
-                    INCREMENT_LENGTH
-                }
-                break;
-            }
-            default:
-                _pw_panic_bad_charptr_subtype(str);
+        } else {
+            length++;
         }
-    } else {
-        pw_assert_string(str);
-
-        unsigned n = _pw_string_length(str);
-        uint8_t* ptr = _pw_string_start(str);
-        uint8_t chr_sz = _pw_string_char_size(str);
-
-        for (unsigned i = 0; i < n; i++) {
-            char32_t c = _pw_get_char(ptr, chr_sz);
-            INCREMENT_LENGTH
-            ptr += chr_sz;
-        }
+        width |= c;
+        ptr += chr_sz;
     }
-    *char_size = char_width_to_char_size(width);
+    *char_size = calc_char_size(width);
     return length;
-
-#   undef INCREMENT_LENGTH
 }
 
 [[nodiscard]] static bool escape_string(PwValuePtr str, PwValuePtr result)
@@ -84,76 +51,41 @@ static unsigned estimate_escaped_length(PwValuePtr str, uint8_t* char_size)
  * Escape only double quotes and characters with codes < 32
  */
 {
-#   define APPEND_ESCAPED_CHAR  \
-        if (c == '"'  || c == '\\') {  \
-            if (!pw_string_append(result, '\\')) { return false; }  \
-            if (!pw_string_append(result, c)) { return false; }  \
-        } else if (c < 32) {  \
-            if (!pw_string_append(result, '\\')) { return false; }  \
-            switch (c)  {  \
-                case '\b': if (!pw_string_append(result, 'b')) { return false; } break; \
-                case '\f': if (!pw_string_append(result, 'f')) { return false; } break;  \
-                case '\n': if (!pw_string_append(result, 'n')) { return false; } break;  \
-                case '\r': if (!pw_string_append(result, 'r')) { return false; } break;  \
-                case '\t': if (!pw_string_append(result, 't')) { return false; } break;  \
-                default:  \
-                    if (!pw_string_append(result, '0')) { return false; }  \
-                    if (!pw_string_append(result, '0')) { return false; }  \
-                    if (!pw_string_append(result, (c >> 4) + '0')) { return false; }  \
-                    if (!pw_string_append(result, (c & 15) + '0')) { return false; }  \
-            }  \
-        } else {  \
-            if (!pw_string_append(result, c)) { return false; }  \
-        }
-
     uint8_t char_size;
     unsigned estimated_length = estimate_escaped_length(str, &char_size);
 
     if (!pw_create_empty_string(estimated_length, char_size, result)) {
         return false;
     }
-    if (pw_is_charptr(str)) {
-        switch (str->charptr_subtype) {
-            case PwSubType_CharPtr: {
-                char8_t* ptr = str->charptr;
-                while(*ptr != 0) {
-                    char32_t c = read_utf8_char(&ptr);
-                    if (c != 0xFFFFFFFF) {
-                        APPEND_ESCAPED_CHAR
-                    }
-                }
-                break;
-            }
-            case PwSubType_Char32Ptr: {
-                char32_t* ptr = str->char32ptr;
-                for (;;) {
-                    char32_t c = *ptr++;
-                    if (c == 0) {
-                        break;
-                    }
-                    APPEND_ESCAPED_CHAR
-                }
-                break;
-            }
-            default:
-                _pw_panic_bad_charptr_subtype(str);
-        }
-    } else {
-        pw_assert_string(str);
 
-        unsigned length = _pw_string_length(str);
-        uint8_t* ptr = _pw_string_start(str);
-        uint8_t char_size = _pw_string_char_size(str);
+    unsigned length = pw_strlen(str);
+    uint8_t* ptr = _pw_string_start(str);
 
-        for (unsigned i = 0; i < length; i++) {
-            char32_t c = _pw_get_char(ptr, char_size);
-            APPEND_ESCAPED_CHAR
-            ptr += char_size;
+    for (unsigned i = 0; i < length; i++) {
+        char32_t c = _pw_get_char(ptr, char_size);
+        if (c == '"'  || c == '\\') {
+            if (!pw_string_append(result, '\\')) { return false; }
+            if (!pw_string_append(result, c)) { return false; }
+        } else if (c < 32) {
+            if (!pw_string_append(result, '\\')) { return false; }
+            switch (c)  {
+                case '\b': if (!pw_string_append(result, 'b')) { return false; } break;
+                case '\f': if (!pw_string_append(result, 'f')) { return false; } break;
+                case '\n': if (!pw_string_append(result, 'n')) { return false; } break;
+                case '\r': if (!pw_string_append(result, 'r')) { return false; } break;
+                case '\t': if (!pw_string_append(result, 't')) { return false; } break;
+                default:
+                    if (!pw_string_append(result, '0')) { return false; }
+                    if (!pw_string_append(result, '0')) { return false; }
+                    if (!pw_string_append(result, (c >> 4) + '0')) { return false; }
+                    if (!pw_string_append(result, (c & 15) + '0')) { return false; }
+            }
+        } else {
+            if (!pw_string_append(result, c)) { return false; }
         }
+        ptr += char_size;
     }
     return true;
-
-#   undef APPEND_ESCAPED_CHAR
 }
 
 [[nodiscard]] static bool write_string_to_file(PwValuePtr file, PwValuePtr str)
@@ -484,7 +416,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
     } else if (pw_is_float(value)) {
         return 16; // no idea how many to reserve, .f conversion may generate very long string
 
-    } else if (pw_is_charptr(value) || pw_is_string(value)) {
+    } else if (pw_is_string(value)) {
         uint8_t char_size;
         unsigned length = estimate_escaped_length(value, &char_size);
         if (*max_char_size < char_size) {
@@ -542,7 +474,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
         }
         return pw_string_append(result, buf);
     }
-    if (pw_is_charptr(value) || pw_is_string(value)) {
+    if (pw_is_string(value)) {
         PwValue escaped = PW_NULL;
         if (!escape_string(value, &escaped)) {
             return false;
@@ -612,7 +544,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
         }
         return pw_write_exact(file, buf, n);
     }
-    if (pw_is_charptr(value) || pw_is_string(value)) {
+    if (pw_is_string(value)) {
         return write_string_to_file(file, value);
     }
     if (pw_is_array(value)) {

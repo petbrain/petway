@@ -7,7 +7,7 @@
 #include "include/pw_args.h"
 #include "include/pw_netutils.h"
 #include "include/pw_socket.h"
-#include "src/pw_charptr_internal.h"
+#include "include/pw_utf.h"
 #include "src/pw_struct_internal.h"
 
 // status codes
@@ -237,7 +237,7 @@ static void socket_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
     char* listening = "";
     char listening_buf[40];
     if (sd->listen_backlog) {
-        snprintf(listening, sizeof(listening), ", listening (backlog=%d)", sd->listen_backlog);
+        snprintf(listening_buf, sizeof(listening_buf), ", listening (backlog=%d)", sd->listen_backlog);
         listening = listening_buf;
     }
 
@@ -290,16 +290,8 @@ unsigned PwInterfaceId_Socket = 0;
         return true;
     }
 
-    PwValue addr_str = PW_NULL;
-    if (pw_is_charptr(addr)) {
-        if (!pw_charptr_to_string(addr, &addr_str)) {
-            return false;
-        }
-    } else {
-        pw_clone2(addr, &addr_str);
-    }
+    pw_expect(String, addr);
 
-    pw_assert_string(&addr_str);
     switch (domain) {
         case AF_LOCAL: {
             if (!pw_create(PwTypeId_SockAddr, result)) {
@@ -309,18 +301,18 @@ unsigned PwInterfaceId_Socket = 0;
             _PwSockAddrData* sa = _pw_sockaddr_data_ptr(result);
             sa->addr.ss_family = AF_LOCAL;
 
-            unsigned len = pw_strlen_in_utf8(&addr_str);
+            unsigned len = pw_strlen_in_utf8(addr);
             if (len >= sizeof(((struct sockaddr_un*)0)->sun_path)) {
                 pw_set_status(PwStatus(PW_ERROR_SOCKET_NAME_TOO_LONG));
                 return false;
             }
-            pw_string_to_utf8_buf(&addr_str, ((struct sockaddr_un*) &sa->addr)->sun_path);
+            pw_string_to_utf8_buf(addr, ((struct sockaddr_un*) &sa->addr)->sun_path);
             *ss_addr_size = offsetof(struct sockaddr_un, sun_path) + len + 1;
             return true;
         }
         case AF_INET:
         case AF_INET6:
-            return pw_parse_inet_address(&addr_str, result);
+            return pw_parse_inet_address(addr, result);
 
         default:
             pw_panic("Address family %d is not supported yet\n", domain);

@@ -12,20 +12,16 @@ extern "C" {
  */
 #define pw_parse_inet_address(addr, result) _Generic((addr),  \
              char*: _pw_parse_inet_address_ascii,  \
-          char8_t*: _pw_parse_inet_address_u8,     \
-         char32_t*: _pw_parse_inet_address_u32,    \
+          char8_t*: _pw_parse_inet_address_utf8,   \
+         char32_t*: _pw_parse_inet_address_utf32,  \
         PwValuePtr: _pw_parse_inet_address         \
     )((addr), (result))
 
 [[nodiscard]] bool _pw_parse_inet_address(PwValuePtr addr, PwValuePtr result);
 
-[[nodiscard]] static inline bool _pw_parse_inet_address_u8 (char8_t*  addr, PwValuePtr result) { _PwValue a = PW_CHARPTR(addr);   return _pw_parse_inet_address(&a, result); }
-[[nodiscard]] static inline bool _pw_parse_inet_address_u32(char32_t* addr, PwValuePtr result) { _PwValue a = PW_CHAR32PTR(addr); return _pw_parse_inet_address(&a, result); }
-
-[[nodiscard]] static inline bool _pw_parse_inet_address_ascii(char* addr, PwValuePtr result)
-{
-    return _pw_parse_inet_address_u8((char8_t*) addr, result);
-}
+[[nodiscard]] static inline bool _pw_parse_inet_address_ascii(char*     addr, PwValuePtr result) { PwValue a = PwStringAscii(addr); return _pw_parse_inet_address(&a, result); }
+[[nodiscard]] static inline bool _pw_parse_inet_address_utf8 (char8_t*  addr, PwValuePtr result) { PwValue a = PwStringUtf8(addr);  return _pw_parse_inet_address(&a, result); }
+[[nodiscard]] static inline bool _pw_parse_inet_address_utf32(char32_t* addr, PwValuePtr result) { PwValue a = PwStringUtf32(addr); return _pw_parse_inet_address(&a, result); }
 
 
 [[nodiscard]] bool pw_parse_subnet(PwValuePtr subnet, PwValuePtr netmask, PwValuePtr result);
@@ -43,20 +39,16 @@ extern "C" {
  */
 #define pw_split_addr_port(addr_port, addr, port) _Generic((addr_port),  \
              char*: _pw_split_addr_port_ascii,  \
-          char8_t*: _pw_split_addr_port_u8,     \
-         char32_t*: _pw_split_addr_port_u32,    \
+          char8_t*: _pw_split_addr_port_utf8,   \
+         char32_t*: _pw_split_addr_port_utf32,  \
         PwValuePtr: _pw_split_addr_port         \
     )(addr_port, (addr), (port))
 
 [[nodiscard]] bool _pw_split_addr_port(PwValuePtr addr_port, PwValuePtr addr, PwValuePtr port);
 
-[[nodiscard]] static inline bool _pw_split_addr_port_u8 (char8_t*  addr_port, PwValuePtr addr, PwValuePtr port) { _PwValue ap = PW_CHARPTR(addr_port);   return _pw_split_addr_port(&ap, addr, port); }
-[[nodiscard]] static inline bool _pw_split_addr_port_u32(char32_t* addr_port, PwValuePtr addr, PwValuePtr port) { _PwValue ap = PW_CHAR32PTR(addr_port); return _pw_split_addr_port(&ap, addr, port); }
-
-[[nodiscard]] static inline bool _pw_split_addr_port_ascii(char* addr_port, PwValuePtr addr, PwValuePtr port)
-{
-    return _pw_split_addr_port_u8((char8_t*) addr_port, addr, port);
-}
+[[nodiscard]] static inline bool _pw_split_addr_port_ascii(char*     addr_port, PwValuePtr addr, PwValuePtr port) { PwValue ap = PwStringAscii(addr_port); return _pw_split_addr_port(&ap, addr, port); }
+[[nodiscard]] static inline bool _pw_split_addr_port_utf8 (char8_t*  addr_port, PwValuePtr addr, PwValuePtr port) { PwValue ap = PwStringUtf8(addr_port);  return _pw_split_addr_port(&ap, addr, port); }
+[[nodiscard]] static inline bool _pw_split_addr_port_utf32(char32_t* addr_port, PwValuePtr addr, PwValuePtr port) { PwValue ap = PwStringUtf32(addr_port); return _pw_split_addr_port(&ap, addr, port); }
 
 
 #ifdef __cplusplus
