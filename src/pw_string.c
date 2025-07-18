@@ -1255,18 +1255,10 @@ StrMethods _pws_str_methods[5] = {
     return result;
 }
 
-_PwValue PwStringAscii(char* initializer)
+_PwValue _pw_create_static_string_ascii(char* initializer)
 {
-    _PwValue s = PW_STRING_ASCII("");
+    _PwValue s = PW_STATIC_STRING("");
     s.length = strlen(initializer);
-    s.char_ptr = (uint8_t*) initializer;
-    return s;
-}
-
-_PwValue PwStringUtf32(char32_t* initializer)
-{
-    _PwValue s = PW_STRING_UTF32("");
-    s.length = utf32_strlen(initializer);
     s.char_ptr = (uint8_t*) initializer;
     return s;
 }
@@ -1279,6 +1271,15 @@ _PwValue PwStringUtf8(char8_t* initializer)
     }
     return result;
 }
+
+_PwValue _pw_create_static_string_utf32(char32_t* initializer)
+{
+    _PwValue s = PW_STATIC_STRING_UTF32("");
+    s.length = utf32_strlen(initializer);
+    s.char_ptr = (uint8_t*) initializer;
+    return s;
+}
+
 
 /****************************************************************
  * String functions

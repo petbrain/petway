@@ -147,7 +147,7 @@ typedef struct {
 
 [[nodiscard]] static inline bool _pw_file_open_ascii(char*  file_name, int flags, mode_t mode, PwValuePtr result)
 {
-    _PwValue fname = PwStringAscii(file_name);
+    _PwValue fname = PwStaticString(file_name);
     return _pw_file_open(&fname, flags, mode, result);
 }
 
@@ -159,7 +159,7 @@ typedef struct {
 
 [[nodiscard]] static inline bool _pw_file_open_utf32(char32_t* file_name, int flags, mode_t mode, PwValuePtr result)
 {
-    _PwValue fname = PwStringUtf32(file_name);
+    _PwValue fname = PwStaticString(file_name);
     return _pw_file_open(&fname, flags, mode, result);
 }
 

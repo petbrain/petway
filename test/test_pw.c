@@ -668,7 +668,7 @@ void test_string()
 
     { // test pw_strcat (by value)
         PwValue v = PW_NULL;
-        if (!pw_strcat(&v, pwva(_pw_create_string_ascii, "Hello! "), PwStringAscii("Thanks"),
+        if (!pw_strcat(&v, pwva(_pw_create_string_ascii, "Hello! "), PwString("Thanks"),
                        PwStringUtf32(U"🙏"), PwStringUtf8(u8"สวัสดี"))) {
             panic();
         }
@@ -976,8 +976,8 @@ void test_array()
             panic();
         }
         PwValue sawatdee   = PwStringUtf8(u8"สวัสดี");
-        PwValue thanks     = PW_STRING_ASCII("Thanks");
-        PwValue multsumesc = PW_STRING_UTF32(U"mulțumesc");
+        PwValue thanks     = PW_STRING("Thanks");
+        PwValue multsumesc = PW_STATIC_STRING_UTF32(U"mulțumesc");
         PwValue wat        = PW_STRING_UTF32(U"🙏");
         if (!pw_array_append(&array, "Hello")) {
             panic();
@@ -1001,9 +1001,9 @@ void test_array()
     { // test dedent
         PwValue array = PW_NULL;
         if (!pw_array_va(&array,
-                      PwStringAscii("   first line"),
-                      PwStringAscii("  second line"),
-                      PwStringAscii("    third line")
+                      PwStaticString("   first line"),
+                      PwStaticString("  second line"),
+                      PwStaticString("    third line")
                      )) {
             panic();
         }
@@ -1057,15 +1057,15 @@ void test_map()
     {
         PwValue map = PW_NULL;
         if (!pw_map_va(&map,
-            PwStringAscii("let's"),   PwStringAscii("go!"),
+            PwString("let's"),        PwString("go!"),
             PwNull(),                 PwBool(true),
-            PwBool(true),             PwStringAscii("true"),
+            PwBool(true),             PwString("true"),
             PwSigned(-10),            PwBool(false),
             PwSigned('b'),            PwSigned(-42),
             PwUnsigned(100),          PwSigned(-1000000L),
             PwUnsigned(300000000ULL), PwFloat(1.23),
-            PwStringUtf8(u8"สวัสดี"),   PwStringUtf32(U"สบาย"),
-            PwStringAscii("finally"), pwva_map(PwStringAscii("ok"), PwStringAscii("done"))
+            PwStringUtf8(u8"สวัสดี"),   PwStaticString(U"สบาย"),
+            PwString("finally"),      pwva_map(PwString("ok"), PwString("done"))
         )) {
             panic();
         }
@@ -1124,7 +1124,7 @@ void test_file()
             //pw_dump(stderr, &dirname);
             TEST(pw_equal(&dirname, "/bin"));
             PwValue path = PW_NULL;
-            if (!pw_path(&path, PwStringAscii(""), PwStringAscii("bin"), PwStringAscii("bash"))) {
+            if (!pw_path(&path, PwString(""), PwString("bin"), PwString("bash"))) {
                 panic();
             }
             TEST(pw_equal(&path, "/bin/bash"));
@@ -1146,13 +1146,13 @@ void test_file()
 
     // compare line readers
     {
-        char* sample_files[] = {
+        static char* sample_files[] = {
             "./test/data/sample.json",
             "./test/data/sample-no-trailing-lf.json"
         };
         for (unsigned i = 0; i < PW_LENGTH(sample_files); i++) {{
 
-            PwValue file_name = PwStringAscii(sample_files[i]);
+            PwValue file_name = PwStaticString(sample_files[i]);
 
             off_t file_size;
             if (!pw_file_size(&file_name, &file_size)) {
@@ -1673,7 +1673,7 @@ void test_socket()
         }
         //pw_dump(stderr, &sock);
         TEST(pw_is_socket(&sock));
-        PwValue local_addr = PW_STRING_ASCII("0.0.0.0:23451");
+        PwValue local_addr = PW_STATIC_STRING("0.0.0.0:23451");
         if (!pw_socket_bind(&sock, &local_addr)) {
             panic();
         }

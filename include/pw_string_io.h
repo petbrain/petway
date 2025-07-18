@@ -34,7 +34,7 @@ typedef struct {
 
 [[nodiscard]] static inline bool _pw_create_string_io_ascii(char* str, PwValuePtr result)
 {
-    PwValue v = PwStringAscii(str);
+    PwValue v = PwStaticString(str);
     PwStringIOCtorArgs args = { .string = &v };
     return pw_create2(PwTypeId_StringIO, &args, result);
 }
@@ -48,7 +48,7 @@ typedef struct {
 
 [[nodiscard]] static inline bool _pw_create_string_io_utf32(char32_t* str, PwValuePtr result)
 {
-    PwValue v = PwStringUtf32(str);
+    PwValue v = PwStaticString(str);
     PwStringIOCtorArgs args = { .string = &v };
     return pw_create2(PwTypeId_StringIO, &args, result);
 }
