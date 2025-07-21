@@ -668,7 +668,7 @@ void test_string()
 
     { // test pw_strcat (by value)
         PwValue v = PW_NULL;
-        if (!pw_strcat(&v, pwva(_pw_create_string_ascii, "Hello! "), PwString("Thanks"),
+        if (!pw_strcat(&v, PwStaticString("Hello! "), PwString("Thanks"),
                        PwStringUtf32(U"🙏"), PwStringUtf8(u8"สวัสดี"))) {
             panic();
         }
@@ -1547,7 +1547,7 @@ void test_json()
                         pwva_array(
                             PwSigned(1),
                             PwSigned(2),
-                            pwva_map( pwva(_pw_create_string_ascii, "four"), pwva(_pw_create_string_ascii, "five\nsix\n") )
+                            pwva_map( PwString("four"), PwString("five\nsix\n") )
                         )
                 )
             )

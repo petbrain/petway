@@ -26,18 +26,6 @@
  * Miscellaneous helpers
  */
 
-#define pwva(func, ...)  \
-    ({  \
-        _PwValue result = PW_NULL;  \
-        if (!(func)(__VA_ARGS__ __VA_OPT__(,) &result)) {  \
-            pw_clone2(&current_task->status, &result);  \
-        }  \
-        result;  \
-    })
-/*
- * Call `func` and return its result on success or current_task->status on error.
- */
-
 #define pw_get(result, container, ...) _pw_get((result), (container) __VA_OPT__(,) __VA_ARGS__, nullptr)
 bool _pw_get(PwValuePtr result, PwValuePtr container, ...);
 
