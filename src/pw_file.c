@@ -371,8 +371,14 @@ static void stop_read_lines(PwValuePtr self);
     return true;
 }
 
+[[nodiscard]] static bool bfile_close(PwValuePtr self);  // forward declaration for bfile_fini
+
 static void bfile_fini(PwValuePtr self)
 {
+    if (!bfile_close(self)) {
+        fprintf(stderr, "Failed %s\n", __func__);
+        pw_print_status(stderr, &current_task->status);
+    }
     _PwBufferedFile* f = get_bfile_data_ptr(self);
     if (f->read_buffer) {
         release((void**) &f->read_buffer, f->read_buffer_size);
@@ -478,16 +484,17 @@ unsigned PwInterfaceId_BufferedFile = 0;
     }
 
     unsigned bytes_written;
-    bool ret = bfile_strict_write(self, f->write_buffer, f->write_position, &bytes_written);
-    if (!ret) {
-        unsigned remaining = f->write_position - bytes_written;
-        if (remaining) {
-            // move unwritten data to the beginning of `data`
-            memmove(f->write_buffer, f->write_buffer + bytes_written, remaining);
-        }
+    if (!bfile_strict_write(self, f->write_buffer, f->write_position, &bytes_written)) {
+        f->write_position = 0;
+        return false;
+    }
+    unsigned remaining = f->write_position - bytes_written;
+    if (remaining) {
+        // move unwritten data to the beginning of `data`
+        memmove(f->write_buffer, f->write_buffer + bytes_written, remaining);
     }
     f->write_position = 0;
-    return ret;
+    return true;
 }
 
 static PwInterface_BufferedFile bfile_buffered_file_interface = {
@@ -518,9 +525,9 @@ static void stop_read_lines(PwValuePtr self);
 [[nodiscard]] static bool bfile_close(PwValuePtr self)
 {
     stop_read_lines(self);
-    bool ret = bfile_flush(self);
+    bool flush_result = bfile_flush(self);
     reset_bfile_data(self);
-    return file_close(self) || ret;  // XXX status is lost if flush failed
+    return file_close(self) && flush_result;  // XXX if both flush and close are failed, flush status is lost
 }
 
 [[nodiscard]] static bool bfile_set_fd(PwValuePtr self, int fd, bool move)
