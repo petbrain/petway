@@ -72,7 +72,7 @@ As you might already guess, `ancestor_id` field implies type hierarchy.
                                   |
    +------+-----+-------+---------+---------+----------+--------+
    |      |     |       |         |         |          |        |
-PwNull PwBool PwInt  PwFloat PwDateTime,   PwPtr,   PwString PwStruct
+PwNull PwBool PwInt  PwFloat PwDateTime,   PwPtr   PwString  PwStruct
                 |            PwTimestamp                        |
                 |                                               |
            +----+----+                 +----------+---------+---+-----+
