@@ -19,6 +19,7 @@
 #include <pw_string.h>
 #include <pw_file.h>
 #include <pw_string_io.h>
+#include <pw_utf.h>
 
 
 /*
