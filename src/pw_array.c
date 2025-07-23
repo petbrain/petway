@@ -223,8 +223,8 @@ static unsigned round_capacity(unsigned capacity)
     if (pw_is_compound(item_ptr)) {
         _pw_abandon(array_value, item_ptr);
     }
-    pw_destroy(item_ptr);
-   return true;
+    pw_move(item_ptr, result);
+    return true;
 }
 
 static void destroy_items(_PwArray* array, unsigned start_index, unsigned end_index, PwValuePtr parent)
@@ -447,7 +447,6 @@ failure:
     pw_assert_array(array_value);
     _PwArray* array = get_array_struct_ptr(array_value);
     if (index < array->length) {
-        pw_destroy(result);
         pw_clone2(&array->items[index], result);
         return true;
     } else {
@@ -474,7 +473,11 @@ failure:
         pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
         return false;
     }
-    pw_clone2(item, &array->items[index]);
+    PwValuePtr item_ptr = &array->items[index];
+    if (pw_is_compound(item_ptr)) {
+        _pw_abandon(array_value, item_ptr);
+    }
+    pw_clone2(item, item_ptr);
     return true;
 }
 
@@ -487,7 +490,11 @@ failure:
         return false;
     }
     if (index < array->length) {
-        pw_clone2(item, &array->items[index]);
+        PwValuePtr item_ptr = &array->items[index];
+        if (pw_is_compound(item_ptr)) {
+            _pw_abandon(array_value, item_ptr);
+        }
+        pw_clone2(item, item_ptr);
         return true;
     } else {
         pw_set_status(PwStatus(PW_ERROR_INDEX_OUT_OF_RANGE));
@@ -507,8 +514,14 @@ failure:
         pw_set_status(PwStatus(PW_ERROR_EXTRACT_FROM_EMPTY_ARRAY));
         return false;
     }
-    pw_move(&array->items[0], result);
-    _pw_array_del(array, 0, 1, array_value);
+    PwValuePtr item_ptr = array->items;
+    if (pw_is_compound(item_ptr)) {
+        _pw_abandon(array_value, item_ptr);
+    }
+    pw_move(item_ptr, result);
+    array->length--;
+    memmove(item_ptr, item_ptr + 1, array->length * sizeof(_PwValue));
+//    memset(&array->items[array->length], 0, sizeof(_PwValue)); // XXX just in case
     return true;
 }
 
@@ -563,7 +576,7 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
     unsigned tail_length = array->length - end_index;
     if (tail_length) {
         memmove(&array->items[start_index], &array->items[end_index], tail_length * sizeof(_PwValue));
-        memset(&array->items[new_length], 0, (array->length - new_length) * sizeof(_PwValue));
+//        memset(&array->items[new_length], 0, (array->length - new_length) * sizeof(_PwValue)); // XXX just in case
     }
     array->length = new_length;
 }
