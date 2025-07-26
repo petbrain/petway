@@ -498,11 +498,18 @@ void test_string()
             panic();
         }
         TEST(pw_equal(&v, "345634563456"));
+
+        unsigned pos;
+        TEST(pw_strstr(&v, "563", 0, &pos));
+        TEST(pos == 2);
+        //pw_dump(stderr, &v);
+
         if (!pw_string_truncate(&v, 0)) {
             panic();
         }
 
         // change char size to 2-byte by appending wider chars -- the string will be copied
+// XXX v.char_size is 4, the following tests fail
         if (!pw_string_append(&v, u8"สวัสดี")) {
             panic();
         }
@@ -623,6 +630,7 @@ void test_string()
             panic();
         }
         TEST(pw_strlen(&v) == 0);
+// XXX the following test fails, need to shrink char size
         TEST(_pw_string_capacity(&v) == 260);
         //pw_dump(stderr, &v);
     }

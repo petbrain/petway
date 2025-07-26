@@ -257,6 +257,8 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
  * Constructors
  */
 
+[[nodiscard]] bool pw_create_empty_string(unsigned capacity, uint8_t char_size, PwValuePtr result);
+
 #define pw_create_string(initializer, result) _Generic((initializer),  \
                  char*: _pw_create_string_ascii, \
               char8_t*: _pw_create_string_utf8,  \
@@ -264,12 +266,10 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
             PwValuePtr: _pw_create_string        \
     )((initializer), (result))
 
-[[nodiscard]] bool _pw_create_string_ascii(char*      initializer, PwValuePtr result);
-[[nodiscard]] bool _pw_create_string_utf8 (char8_t*   initializer, PwValuePtr result);
-[[nodiscard]] bool _pw_create_string_utf32(char32_t*  initializer, PwValuePtr result);
-[[nodiscard]] bool _pw_create_string      (PwValuePtr initializer, PwValuePtr result);
-
-[[nodiscard]] bool pw_create_empty_string(unsigned capacity, uint8_t char_size, PwValuePtr result);
+[[nodiscard]] bool _pw_create_string     (PwValuePtr initializer, PwValuePtr result);
+[[nodiscard]] bool _pw_create_string_utf8(char8_t*   initializer, PwValuePtr result);
+[[nodiscard]] static inline bool _pw_create_string_ascii(char*     initializer, PwValuePtr result) { _PwValue i = PwStaticString(initializer); return _pw_create_string(&i, result); }
+[[nodiscard]] static inline bool _pw_create_string_utf32(char32_t* initializer, PwValuePtr result) { _PwValue i = PwStaticString(initializer); return _pw_create_string(&i, result); }
 
 /****************************************************************
  * Append functions
@@ -284,11 +284,11 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
             PwValuePtr: _pw_string_append         \
     )((dest), (src))
 
-[[nodiscard]] bool _pw_string_append_c32  (PwValuePtr dest, char32_t   c);
-[[nodiscard]] bool _pw_string_append_ascii(PwValuePtr dest, char*      src);
-[[nodiscard]] bool _pw_string_append_utf8 (PwValuePtr dest, char8_t*   src);
-[[nodiscard]] bool _pw_string_append_utf32(PwValuePtr dest, char32_t*  src);
-[[nodiscard]] bool _pw_string_append      (PwValuePtr dest, PwValuePtr src);
+[[nodiscard]] bool _pw_string_append_c32 (PwValuePtr dest, char32_t   c);
+[[nodiscard]] bool _pw_string_append     (PwValuePtr dest, PwValuePtr src);
+[[nodiscard]] bool _pw_string_append_utf8(PwValuePtr dest, char8_t*   src);
+[[nodiscard]] static inline bool _pw_string_append_ascii(PwValuePtr dest, char*     src) { _PwValue s = PwStaticString(src); return _pw_string_append(dest, &s); }
+[[nodiscard]] static inline bool _pw_string_append_utf32(PwValuePtr dest, char32_t* src) { _PwValue s = PwStaticString(src); return _pw_string_append(dest, &s); }
 
 [[nodiscard]] bool pw_string_append_buffer(PwValuePtr dest, uint8_t* buffer, unsigned size);
 /*
@@ -323,10 +323,10 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
             PwValuePtr: _pw_string_append_substring         \
     )((dest), (src), (src_start_pos), (src_end_pos))
 
-[[nodiscard]] bool _pw_string_append_substring_ascii(PwValuePtr dest, char*      src, unsigned src_start_pos, unsigned src_end_pos);
-[[nodiscard]] bool _pw_string_append_substring_utf8 (PwValuePtr dest, char8_t*   src, unsigned src_start_pos, unsigned src_end_pos);
-[[nodiscard]] bool _pw_string_append_substring_utf32(PwValuePtr dest, char32_t*  src, unsigned src_start_pos, unsigned src_end_pos);
-[[nodiscard]] bool _pw_string_append_substring      (PwValuePtr dest, PwValuePtr src, unsigned src_start_pos, unsigned src_end_pos);
+[[nodiscard]] bool _pw_string_append_substring     (PwValuePtr dest, PwValuePtr src, unsigned src_start_pos, unsigned src_end_pos);
+[[nodiscard]] bool _pw_string_append_substring_utf8(PwValuePtr dest, char8_t*   src, unsigned src_start_pos, unsigned src_end_pos);
+[[nodiscard]] static inline bool _pw_string_append_substring_ascii(PwValuePtr dest, char*     src, unsigned src_start_pos, unsigned src_end_pos) { _PwValue s = PwStaticString(src); return _pw_string_append_substring(dest, &s, src_start_pos, src_end_pos); }
+[[nodiscard]] static inline bool _pw_string_append_substring_utf32(PwValuePtr dest, char32_t* src, unsigned src_start_pos, unsigned src_end_pos) { _PwValue s = PwStaticString(src); return _pw_string_append_substring(dest, &s, src_start_pos, src_end_pos); }
 
 
 /****************************************************************
@@ -342,10 +342,10 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
         PwValuePtr: _pw_substring_eq         \
     )((a), (start_pos), (end_pos), (b))
 
-bool _pw_substring_eq_ascii(PwValuePtr a, unsigned start_pos, unsigned end_pos, char*      b);
-bool _pw_substring_eq_utf8 (PwValuePtr a, unsigned start_pos, unsigned end_pos, char8_t*   b);
-bool _pw_substring_eq_utf32(PwValuePtr a, unsigned start_pos, unsigned end_pos, char32_t*  b);
-bool _pw_substring_eq      (PwValuePtr a, unsigned start_pos, unsigned end_pos, PwValuePtr b);
+[[nodiscard]] bool _pw_substring_eq     (PwValuePtr a, unsigned start_pos, unsigned end_pos, PwValuePtr b);
+[[nodiscard]] bool _pw_substring_eq_utf8(PwValuePtr a, unsigned start_pos, unsigned end_pos, char8_t*   b);
+[[nodiscard]] static inline bool _pw_substring_eq_ascii(PwValuePtr a, unsigned start_pos, unsigned end_pos, char*     b) { _PwValue s = PwStaticString(b); return _pw_substring_eq(a, start_pos, end_pos, &s); }
+[[nodiscard]] static inline bool _pw_substring_eq_utf32(PwValuePtr a, unsigned start_pos, unsigned end_pos, char32_t* b) { _PwValue s = PwStaticString(b); return _pw_substring_eq(a, start_pos, end_pos, &s); }
 
 
 #define pw_startswith(str, prefix) _Generic((prefix), \
@@ -357,11 +357,11 @@ bool _pw_substring_eq      (PwValuePtr a, unsigned start_pos, unsigned end_pos, 
         PwValuePtr: _pw_startswith         \
     )((str), (prefix))
 
-bool _pw_startswith_c32  (PwValuePtr str, char32_t   prefix);
-bool _pw_startswith_ascii(PwValuePtr str, char*      prefix);
-bool _pw_startswith_utf8 (PwValuePtr str, char8_t*   prefix);
-bool _pw_startswith_utf32(PwValuePtr str, char32_t*  prefix);
-bool _pw_startswith      (PwValuePtr str, PwValuePtr prefix);
+[[nodiscard]] bool _pw_startswith_c32 (PwValuePtr str, char32_t   prefix);
+[[nodiscard]] bool _pw_startswith     (PwValuePtr str, PwValuePtr prefix);
+[[nodiscard]] bool _pw_startswith_utf8(PwValuePtr str, char8_t*   prefix);
+[[nodiscard]] static inline bool _pw_startswith_ascii(PwValuePtr str, char*     prefix) { _PwValue p = PwStaticString(prefix); return _pw_startswith(str, &p); }
+[[nodiscard]] static inline bool _pw_startswith_utf32(PwValuePtr str, char32_t* prefix) { _PwValue p = PwStaticString(prefix); return _pw_startswith(str, &p); }
 
 
 #define pw_endswith(str, suffix) _Generic((suffix), \
@@ -373,11 +373,40 @@ bool _pw_startswith      (PwValuePtr str, PwValuePtr prefix);
         PwValuePtr: _pw_endswith         \
     )((str), (suffix))
 
-bool _pw_endswith_c32  (PwValuePtr str, char32_t   suffix);
-bool _pw_endswith_ascii(PwValuePtr str, char*      suffix);
-bool _pw_endswith_utf8 (PwValuePtr str, char8_t*   suffix);
-bool _pw_endswith_utf32(PwValuePtr str, char32_t*  suffix);
-bool _pw_endswith      (PwValuePtr str, PwValuePtr suffix);
+[[nodiscard]] bool _pw_endswith_c32 (PwValuePtr str, char32_t   suffix);
+[[nodiscard]] bool _pw_endswith     (PwValuePtr str, PwValuePtr suffix);
+[[nodiscard]] bool _pw_endswith_utf8(PwValuePtr str, char8_t*   suffix);
+[[nodiscard]] static inline bool _pw_endswith_ascii(PwValuePtr str, char*     suffix) { _PwValue s = PwStaticString(suffix); return _pw_endswith(str, &s); }
+[[nodiscard]] static inline bool _pw_endswith_utf32(PwValuePtr str, char32_t* suffix) { _PwValue s = PwStaticString(suffix); return _pw_endswith(str, &s); }
+
+
+/****************************************************************
+ * Substring scanning functions.
+ */
+
+#define pw_strstr(str, substr, start_pos, pos) _Generic((substr), \
+                 char*: _pw_strstr_ascii,  \
+              char8_t*: _pw_strstr_utf8,   \
+             char32_t*: _pw_strstr_utf32,  \
+            PwValuePtr: _pw_strstr         \
+    )((str), (substr), (start_pos), (pos))
+
+[[nodiscard]] bool _pw_strstr     (PwValuePtr str, PwValuePtr substr, unsigned start_pos, unsigned* pos);
+[[nodiscard]] bool _pw_strstr_utf8(PwValuePtr str, char8_t*   substr, unsigned start_pos, unsigned* pos);
+[[nodiscard]] static inline bool _pw_strstr_ascii(PwValuePtr str, char*     substr, unsigned start_pos, unsigned* pos) { _PwValue s = PwStaticString(substr); return _pw_strstr(str, &s, start_pos, pos); }
+[[nodiscard]] static inline bool _pw_strstr_utf32(PwValuePtr str, char32_t* substr, unsigned start_pos, unsigned* pos) { _PwValue s = PwStaticString(substr); return _pw_strstr(str, &s, start_pos, pos); }
+
+#define pw_strstri(str, substr, pos) _Generic((substr), \
+                 char*: _pw_strstri_ascii,  \
+              char8_t*: _pw_strstri_utf8,   \
+             char32_t*: _pw_strstri_utf32,  \
+            PwValuePtr: _pw_strstri         \
+    )((str), (substr), (start_pos), (pos))
+
+[[nodiscard]] bool _pw_strstri     (PwValuePtr str, PwValuePtr substr, unsigned start_pos, unsigned* pos);
+[[nodiscard]] bool _pw_strstri_utf8(PwValuePtr str, char8_t*   substr, unsigned start_pos, unsigned* pos);
+[[nodiscard]] static inline bool _pw_strstri_ascii(PwValuePtr str, char*     substr, unsigned start_pos, unsigned* pos) { _PwValue s = PwStaticString(substr); return _pw_strstri(str, &s, start_pos, pos); }
+[[nodiscard]] static inline bool _pw_strstri_utf32(PwValuePtr str, char32_t* substr, unsigned start_pos, unsigned* pos) { _PwValue s = PwStaticString(substr); return _pw_strstri(str, &s, start_pos, pos); }
 
 
 /****************************************************************
@@ -386,9 +415,10 @@ bool _pw_endswith      (PwValuePtr str, PwValuePtr suffix);
  * maxsplit == 0 imposes no limit
  */
 
-[[nodiscard]] bool pw_string_split(PwValuePtr str, unsigned maxsplit, PwValuePtr result);  // split by spaces
-[[nodiscard]] bool pw_string_split_chr(PwValuePtr str, char32_t splitter, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool pw_string_rsplit_chr(PwValuePtr str, char32_t splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool pw_string_split     (PwValuePtr str, /* split by spaces */ unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool pw_string_split_chr (PwValuePtr str, char32_t splitter,    unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool pw_string_rsplit    (PwValuePtr str, /* split by spaces */ unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool pw_string_rsplit_chr(PwValuePtr str, char32_t splitter,    unsigned maxsplit, PwValuePtr result);
 
 #define pw_string_split_any(str, splitters, maxsplit) _Generic((splitters),  \
                  char*: _pw_string_split_any_ascii,  \
@@ -397,24 +427,70 @@ bool _pw_endswith      (PwValuePtr str, PwValuePtr suffix);
             PwValuePtr: _pw_string_split_any         \
     )((str), (splitters), (maxsplit))
 
-[[nodiscard]] bool _pw_string_split_any_ascii(PwValuePtr str, char*      splitters, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_any_utf8 (PwValuePtr str, char8_t*   splitters, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_any_utf32(PwValuePtr str, char32_t*  splitters, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_any      (PwValuePtr str, PwValuePtr splitters, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_any     (PwValuePtr str, PwValuePtr splitters, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_any_utf8(PwValuePtr str, char8_t*   splitters, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] static inline bool _pw_string_split_any_ascii(PwValuePtr str, char*     splitters, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitters); return _pw_string_split_any(str, &s, maxsplit, result); }
+[[nodiscard]] static inline bool _pw_string_split_any_utf32(PwValuePtr str, char32_t* splitters, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitters); return _pw_string_split_any(str, &s, maxsplit, result); }
 
-#define pw_string_split_strict(str, splitter, maxsplit) _Generic((splitter),  \
-              char32_t: _pw_string_split_c32,           \
-                   int: _pw_string_split_c32,           \
-                 char*: _pw_string_split_strict_ascii,  \
-              char8_t*: _pw_string_split_strict_utf8,   \
-             char32_t*: _pw_string_split_strict_utf32,  \
-            PwValuePtr: _pw_string_split_strict         \
+#define pw_string_rsplit_any(str, splitters, maxsplit) _Generic((splitters),  \
+                 char*: _pw_string_rsplit_any_ascii,  \
+              char8_t*: _pw_string_rsplit_any_utf8,   \
+             char32_t*: _pw_string_rsplit_any_utf32,  \
+            PwValuePtr: _pw_string_rsplit_any         \
+    )((str), (splitters), (maxsplit))
+
+[[nodiscard]] bool _pw_string_rsplit_any     (PwValuePtr str, PwValuePtr splitters, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_rsplit_any_utf8(PwValuePtr str, char8_t*   splitters, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] static inline bool _pw_string_rsplit_any_ascii(PwValuePtr str, char*     splitters, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitters); return _pw_string_rsplit_any(str, &s, maxsplit, result); }
+[[nodiscard]] static inline bool _pw_string_rsplit_any_utf32(PwValuePtr str, char32_t* splitters, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitters); return _pw_string_rsplit_any(str, &s, maxsplit, result); }
+
+#define pw_string_split_substr(str, splitter, maxsplit) _Generic((splitter),  \
+                 char*: _pw_string_split_substr_ascii,  \
+              char8_t*: _pw_string_split_substr_utf8,   \
+             char32_t*: _pw_string_split_substr_utf32,  \
+            PwValuePtr: _pw_string_split_substr         \
     )((str), (splitter), (maxsplit))
 
-[[nodiscard]] bool _pw_string_split_strict_ascii(PwValuePtr str, char*      splitter, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_strict_utf8 (PwValuePtr str, char8_t*   splitter, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_strict_utf32(PwValuePtr str, char32_t*  splitter, unsigned maxsplit, PwValuePtr result);
-[[nodiscard]] bool _pw_string_split_strict      (PwValuePtr str, PwValuePtr splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_substr     (PwValuePtr str, PwValuePtr splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_substr_utf8(PwValuePtr str, char8_t*   splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] static inline bool _pw_string_split_substr_ascii(PwValuePtr str, char*      splitter, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitter); return _pw_string_split_substr(str, &s, maxsplit, result); }
+[[nodiscard]] static inline bool _pw_string_split_substr_utf32(PwValuePtr str, char32_t*  splitter, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitter); return _pw_string_split_substr(str, &s, maxsplit, result); }
+
+#define pw_string_split_substri(str, splitter, maxsplit) _Generic((splitter),  \
+                 char*: _pw_string_split_substri_ascii,  \
+              char8_t*: _pw_string_split_substri_utf8,   \
+             char32_t*: _pw_string_split_substri_utf32,  \
+            PwValuePtr: _pw_string_split_substri         \
+    )((str), (splitter), (maxsplit))
+
+[[nodiscard]] bool _pw_string_split_substri     (PwValuePtr str, PwValuePtr splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_split_substri_utf8(PwValuePtr str, char8_t*   splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] static inline bool _pw_string_split_substri_ascii(PwValuePtr str, char*      splitter, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitter); return _pw_string_split_substri(str, &s, maxsplit, result); }
+[[nodiscard]] static inline bool _pw_string_split_substri_utf32(PwValuePtr str, char32_t*  splitter, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitter); return _pw_string_split_substri(str, &s, maxsplit, result); }
+
+#define pw_string_rsplit_substr(str, splitter, maxsplit) _Generic((splitter),  \
+                 char*: _pw_string_rsplit_substr_ascii,  \
+              char8_t*: _pw_string_rsplit_substr_utf8,   \
+             char32_t*: _pw_string_rsplit_substr_utf32,  \
+            PwValuePtr: _pw_string_rsplit_substr         \
+    )((str), (splitter), (maxsplit))
+
+[[nodiscard]] bool _pw_string_rsplit_substr     (PwValuePtr str, PwValuePtr splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_rsplit_substr_utf8(PwValuePtr str, char8_t*   splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] static inline bool _pw_string_rsplit_substr_ascii(PwValuePtr str, char*      splitter, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitter); return _pw_string_rsplit_substr(str, &s, maxsplit, result); }
+[[nodiscard]] static inline bool _pw_string_rsplit_substr_utf32(PwValuePtr str, char32_t*  splitter, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitter); return _pw_string_rsplit_substr(str, &s, maxsplit, result); }
+
+#define pw_string_rsplit_substri(str, splitter, maxsplit) _Generic((splitter),  \
+                 char*: _pw_string_rsplit_substri_ascii,  \
+              char8_t*: _pw_string_rsplit_substri_utf8,   \
+             char32_t*: _pw_string_rsplit_substri_utf32,  \
+            PwValuePtr: _pw_string_rsplit_substri         \
+    )((str), (splitter), (maxsplit))
+
+[[nodiscard]] bool _pw_string_rsplit_substri     (PwValuePtr str, PwValuePtr splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] bool _pw_string_rsplit_substri_utf8(PwValuePtr str, char8_t*   splitter, unsigned maxsplit, PwValuePtr result);
+[[nodiscard]] static inline bool _pw_string_rsplit_substri_ascii(PwValuePtr str, char*      splitter, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitter); return _pw_string_rsplit_substri(str, &s, maxsplit, result); }
+[[nodiscard]] static inline bool _pw_string_rsplit_substri_utf32(PwValuePtr str, char32_t*  splitter, unsigned maxsplit, PwValuePtr result) { _PwValue s = PwStaticString(splitter); return _pw_string_rsplit_substri(str, &s, maxsplit, result); }
 
 
 /****************************************************************
