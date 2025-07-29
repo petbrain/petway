@@ -18,7 +18,8 @@ void _pw_panic_bad_char_size(uint8_t char_size)
 
 #define _header_size  offsetof(_PwStringData, data)
 
-static unsigned _max_capacity[4] = {
+static unsigned _max_capacity[5] = {
+    0,
     0xFFFF'FFFF - _header_size,
     (0xFFFF'FFFF - _header_size) / 2,
     (0xFFFF'FFFF - _header_size) / 3,
@@ -145,6 +146,7 @@ static void string_destroy(PwValuePtr self)
     }
 
     if(capacity > _max_capacity[char_size]) {
+        pw_set_status(PwStatus(PW_ERROR_STRING_TOO_LONG));
         return false;
     }
 
@@ -265,6 +267,7 @@ static void string_destroy(PwValuePtr self)
         uint8_t char_size = str->char_size;
 
         if (increment > _max_capacity[char_size] - str->length) {
+            pw_set_status(PwStatus(PW_ERROR_STRING_TOO_LONG));
             return false;
         }
         unsigned new_capacity = str->length + increment;
@@ -287,6 +290,7 @@ static void string_destroy(PwValuePtr self)
 
     if (increment > _max_capacity[new_char_size] - length) {
         // cannot expand
+        pw_set_status(PwStatus(PW_ERROR_STRING_TOO_LONG));
         return false;
     }
 
