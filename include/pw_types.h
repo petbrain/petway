@@ -150,7 +150,11 @@ union __PwValue {
         PwTypeId /* uint16_t */ _ptr_type_id;
         uint16_t _ptr_padding_1;
         uint32_t _ptr_pagging_2;
-        void* ptr;
+        // ISO C forbids conversion of object pointer to function pointer type, so define both
+        union {
+            void* ptr;
+            void (*func_ptr)();
+        };
     };
 
     struct {
@@ -253,6 +257,7 @@ typedef _PwValue* PwValuePtr;
 // make sure _PwValue structure is correct
 static_assert( offsetof(_PwValue, bool_value)  == 8 );
 static_assert( offsetof(_PwValue, ptr)         == 8 );
+static_assert( offsetof(_PwValue, func_ptr)    == 8 );
 static_assert( offsetof(_PwValue, struct_data) == 8 );
 static_assert( offsetof(_PwValue, status_data) == 8 );
 static_assert( offsetof(_PwValue, string_data) == 8 );
