@@ -5,7 +5,7 @@ void _pw_dump_start(FILE* fp, PwValuePtr value, int indent)
     char* type_name = pw_typeof(value)->name;
 
     _pw_print_indent(fp, indent);
-    fprintf(fp, "%p", value);
+    fprintf(fp, "%p", (void*) value);
     if (type_name == nullptr) {
         fprintf(fp, " BAD TYPE %d", value->type_id);
     } else {

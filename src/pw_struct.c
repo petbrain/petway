@@ -118,7 +118,7 @@ void _pw_struct_hash(PwValuePtr self, PwHashContext* ctx)
 void _pw_dump_struct_data(FILE* fp, PwValuePtr value)
 {
     if (value->struct_data) {
-        fprintf(fp, " data=%p refcount=%u;", value->struct_data, value->struct_data->refcount);
+        fprintf(fp, " data=%p refcount=%u;", (void*) value->struct_data, value->struct_data->refcount);
     } else {
         fprintf(fp, " data=NULL;");
     }

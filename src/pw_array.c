@@ -79,7 +79,7 @@ static void array_dump(PwValuePtr self, FILE* fp, int first_indent, int next_ind
 
     PwValuePtr value_seen = _pw_on_chain(self, tail);
     if (value_seen) {
-        fprintf(fp, "already dumped: %p, data=%p\n", value_seen, value_seen->struct_data);
+        fprintf(fp, "already dumped: %p, data=%p\n", (void*) value_seen, (void*) value_seen->struct_data);
         return;
     }
 

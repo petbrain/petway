@@ -301,7 +301,7 @@ void _pw_dump_compound_data(FILE* fp, PwValuePtr value, int indent)
                 if (parent) {
                     char str[128];
                     line_length += sprintf(str, "parent %p refcount %u",
-                                           parent, chunk_ptr->parents_refcount[i]);
+                                           (void*) parent, chunk_ptr->parents_refcount[i]);
                     fputs(str, fp);
                     if (line_length >= 80) {
                         fputc('\n', fp);
@@ -319,8 +319,8 @@ void _pw_dump_compound_data(FILE* fp, PwValuePtr value, int indent)
         fprintf(fp, " compound; embedded:\n");
         _pw_print_indent(fp, indent);
         fprintf(fp, "parent %p refcount %u; parent %p refcount %u\n",
-                cdata->parents[0], cdata->parents_refcount[0],
-                cdata->parents[1], cdata->parents_refcount[1]);
+                (void*) cdata->parents[0], cdata->parents_refcount[0],
+                (void*) cdata->parents[1], cdata->parents_refcount[1]);
     }
 }
 

@@ -399,8 +399,8 @@ void _pw_string_dump_data(FILE* fp, PwValuePtr str, int indent)
         fprintf(fp, " embedded,");
     } else if (str->allocated) {
         fprintf(fp, " data=%p, refcount=%u, data size=%u, ptr=%p",
-                str->string_data, str->string_data->refcount,
-                get_string_data_size(str), _pw_string_start(str));
+                (void*) str->string_data, str->string_data->refcount,
+                get_string_data_size(str), (void*) _pw_string_start(str));
     } else {
         fprintf(fp, " static,");
     }
