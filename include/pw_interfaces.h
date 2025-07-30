@@ -34,9 +34,9 @@ typedef struct __PwInterface _PwInterface;
 
 typedef struct {
     unsigned (*length)(PwValuePtr self);
-    [[nodiscard]] bool (*get_item)(PwValuePtr self, PwValuePtr key, PwValuePtr result);
-    [[nodiscard]] bool (*set_item)(PwValuePtr self, PwValuePtr key, PwValuePtr value);
-    [[nodiscard]] bool (*delete_item)(PwValuePtr self, PwValuePtr key);
+    [[ gnu::warn_unused_result ]] bool (*get_item)(PwValuePtr self, PwValuePtr key, PwValuePtr result);
+    [[ gnu::warn_unused_result ]] bool (*set_item)(PwValuePtr self, PwValuePtr key, PwValuePtr value);
+    [[ gnu::warn_unused_result ]] bool (*delete_item)(PwValuePtr self, PwValuePtr key);
 
 } PwInterface_RandomAccess;
 
@@ -45,7 +45,7 @@ typedef struct {
  */
 
 typedef struct {
-    [[nodiscard]] bool (*read)(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read);
+    [[ gnu::warn_unused_result ]] bool (*read)(PwValuePtr self, void* buffer, unsigned buffer_size, unsigned* bytes_read);
 } PwInterface_Reader;
 
 
@@ -54,7 +54,7 @@ typedef struct {
  */
 
 typedef struct {
-    [[nodiscard]] bool (*write)(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written);
+    [[ gnu::warn_unused_result ]] bool (*write)(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written);
 } PwInterface_Writer;
 
 
@@ -65,7 +65,7 @@ typedef struct {
 
 typedef struct {
 
-    [[nodiscard]] bool (*start)(PwValuePtr self);
+    [[ gnu::warn_unused_result ]] bool (*start)(PwValuePtr self);
     /*
      * Prepare to read lines.
      *
@@ -75,12 +75,12 @@ typedef struct {
      * Calling this method again should reset line reader.
      */
 
-    [[nodiscard]] bool (*read_line)(PwValuePtr self, PwValuePtr result);
+    [[ gnu::warn_unused_result ]] bool (*read_line)(PwValuePtr self, PwValuePtr result);
     /*
      * Read next line.
      */
 
-    [[nodiscard]] bool (*read_line_inplace)(PwValuePtr self, PwValuePtr line);
+    [[ gnu::warn_unused_result ]] bool (*read_line_inplace)(PwValuePtr self, PwValuePtr line);
     /*
      * Truncate line and read next line into it.
      * Return true if read some data, false if error or eof.
@@ -88,14 +88,14 @@ typedef struct {
      * This makes sense for files, but for string list it destroys line and clones nexr one into it.
      */
 
-    [[nodiscard]] bool (*unread_line)(PwValuePtr self, PwValuePtr line);
+    [[ gnu::warn_unused_result ]] bool (*unread_line)(PwValuePtr self, PwValuePtr line);
     /*
      * Push line back to the reader.
      * Only one pushback is guaranteed.
      * Return false if pushback buffer is full.
      */
 
-    [[nodiscard]] unsigned (*get_line_number)(PwValuePtr self);
+    [[ gnu::warn_unused_result ]] unsigned (*get_line_number)(PwValuePtr self);
     /*
      * Return current line number, 1-based.
      */

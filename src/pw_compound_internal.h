@@ -43,7 +43,7 @@ struct __PwCompoundData {
      */
     struct {
         union {
-            ptrdiff_t using_parents_list: 1;    // given that pointers are aligned, we use least significant bit for the flag
+            size_t using_parents_list: 1;       // given that pointers are aligned, we use least significant bit for the flag
             _PwCompoundData* parents[2];        // using_parents_list == 0, using pointers as is
             struct {
                 _PwParentsChunk* parents_list;  // using_parents_list == 1, this points to the list of other parents

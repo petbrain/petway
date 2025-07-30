@@ -14,6 +14,7 @@ extern "C" {
  */
 
 #define pw_assert(condition) \
+    __extension__  \
     ({  \
         if (_pw_unlikely( !(condition) )) {  \
             pw_panic("PW assertion failed at %s:%s:%d: " #condition "\n", __FILE__, __func__, __LINE__);  \

@@ -316,16 +316,22 @@ typedef struct {
 
     // basic interface
     // optional methods should be called only if not nullptr
-    [[ nodiscard]] PwMethodCreate   create;    // mandatory
-                   PwMethodDestroy  destroy;   // optional if value does not have allocated data
-                   PwMethodClone    clone;     // optional; if set, it is called by pw_clone()
-                   PwMethodHash     hash;      // mandatory
-    [[ nodiscard]] PwMethodDeepCopy deepcopy;  // optional; XXX how it should work with subtypes is not clear yet
-                   PwMethodDump     dump;      // mandatory
-    [[ nodiscard]] PwMethodToString to_string; // mandatory
-    [[ nodiscard]] PwMethodIsTrue   is_true;   // mandatory
-    [[ nodiscard]] PwMethodEqual    equal_sametype;  // mandatory
-    [[ nodiscard]] PwMethodEqual    equal;     // mandatory
+    [[ gnu::warn_unused_result ]]
+    PwMethodCreate   create;    // mandatory
+    PwMethodDestroy  destroy;   // optional if value does not have allocated data
+    PwMethodClone    clone;     // optional; if set, it is called by pw_clone()
+    PwMethodHash     hash;      // mandatory
+    [[ gnu::warn_unused_result ]]
+    PwMethodDeepCopy deepcopy;  // optional; XXX how it should work with subtypes is not clear yet
+    PwMethodDump     dump;      // mandatory
+    [[ gnu::warn_unused_result ]]
+    PwMethodToString to_string; // mandatory
+    [[ gnu::warn_unused_result ]]
+    PwMethodIsTrue   is_true;   // mandatory
+    [[ gnu::warn_unused_result ]]
+    PwMethodEqual    equal_sametype;  // mandatory
+    [[ gnu::warn_unused_result ]]
+    PwMethodEqual    equal;     // mandatory
 
     // struct data offset and size
     unsigned data_offset;
@@ -341,8 +347,9 @@ typedef struct {
      * If init fails for some subtype, _pw_struct_alloc calls fini method
      * for already called init in the pedigree.
      */
-    [[ nodiscard]] PwMethodInit init;
-                   PwMethodFini fini;
+    [[ gnu::warn_unused_result ]]
+    PwMethodInit init;
+    PwMethodFini fini;
 
     // other interfaces
     unsigned num_interfaces;
@@ -470,6 +477,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwNull(initializer)  \
     /* make Bool rvalue */  \
+    __extension__ \
     ({  \
         _PwValue v = PW_NULL;  \
         v;  \
@@ -483,6 +491,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwBool(initializer)  \
     /* make Bool rvalue */  \
+    __extension__ \
     ({  \
         _PwValue v = PW_BOOL(initializer);  \
         v;  \
@@ -496,6 +505,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwSigned(initializer)  \
     /* make Signed rvalue */  \
+    __extension__ \
     ({  \
         _PwValue v = PW_SIGNED(initializer);  \
         v;  \
@@ -509,6 +519,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwUnsigned(initializer)  \
     /* make Unsigned rvalue */  \
+    __extension__ \
     ({  \
         _PwValue v = PW_UNSIGNED(initializer);  \
         v;  \
@@ -522,6 +533,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwFloat(initializer)  \
     /* make Float rvalue */  \
+    __extension__ \
     ({  \
         _PwValue v = PW_FLOAT(initializer);  \
         v;  \
@@ -539,6 +551,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwString(initializer)  \
     /* make String rvalue, character size 1 byte, up to 12 chars */  \
+    __extension__ \
     ({  \
         _PwValue s = PW_STRING(initializer);  \
         s;  \
@@ -556,6 +569,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwStringUtf32(initializer)  \
     /* make String rvalue, character size 4 bytes, up to 3 chars */  \
+    __extension__ \
     ({  \
         _PwValue s = PW_STRING_UTF32(initializer);  \
         s;  \
@@ -596,6 +610,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwDateTime()  \
     /* make DateTime rvalue */  \
+    __extension__ \
     ({  \
         _PwValue v = PW_DATETIME;  \
         v;  \
@@ -608,6 +623,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwTimestamp()  \
     /* make Timestamp rvalue */  \
+    __extension__ \
     ({  \
         _PwValue v = PW_TIMESTAMP;  \
         v;  \
@@ -621,6 +637,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwPtr(initializer)  \
     /* make Ptr rvalue */  \
+    __extension__ \
     ({  \
         _PwValue v = PW_PTR(initializer);  \
         v;  \
@@ -628,6 +645,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwVaEnd()  \
     /* make VA_END rvalue */  \
+    __extension__ \
     ({  \
         _PwValue status = {  \
             ._status_type_id = PwTypeId_Status,  \
@@ -646,6 +664,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwStatus(_status_code)  \
     /* make Status rvalue */  \
+    __extension__ \
     ({  \
         _PwValue status = PW_STATUS(_status_code);  \
         status;  \
@@ -653,6 +672,7 @@ void pw_dump_types(FILE* fp);
 
 #define PwErrno(_errno)  \
     /* make errno Status rvalue */  \
+    __extension__ \
     ({  \
         _PwValue status = PW_STATUS(PW_ERROR_ERRNO);  \
         status.pw_errno = _errno;  \

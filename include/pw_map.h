@@ -19,6 +19,7 @@ extern "C" {
     _pw_map_va((result), __VA_ARGS__  __VA_OPT__(,) PwVaEnd())
 
 #define pwva_map(...) \
+    __extension__ \
     ({  \
         _PwValue result = PW_NULL;  \
         if (!_pw_map_va(&result, __VA_ARGS__  __VA_OPT__(,) PwVaEnd())) {  \

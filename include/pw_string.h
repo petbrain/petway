@@ -136,7 +136,7 @@ char32_t pw_char_at(PwValuePtr str, unsigned position);
 // check if `index` is within string length
 #define pw_string_index_valid(str, index) ((index) < pw_strlen(str))
 
-static unsigned inline pw_strlen(PwValuePtr str)
+static inline unsigned pw_strlen(PwValuePtr str)
 /*
  * Return length of string.
  */
@@ -542,6 +542,7 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
         }  \
 
 #define PW_STRING_ITER_NEXT(name)  \
+    __extension__ \
     ({  \
         char32_t chr = PW_STRING_ITER_GETCHAR(name);  \
         PW_STRING_ITER_INC(name);  \
@@ -549,6 +550,7 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
     })
 
 #define PW_STRING_ITER_PREV(name)  \
+    __extension__ \
     ({  \
         PW_STRING_ITER_DEC(name);  \
         PW_STRING_ITER_GETCHAR(name);  \

@@ -22,6 +22,7 @@ extern "C" {
     _pw_array_va((result), __VA_ARGS__ __VA_OPT__(,) PwVaEnd())
 
 #define pwva_array(...) \
+    __extension__ \
     ({  \
         _PwValue result = PW_NULL;  \
         if (!_pw_array_va(&result, __VA_ARGS__  __VA_OPT__(,) PwVaEnd())) {  \

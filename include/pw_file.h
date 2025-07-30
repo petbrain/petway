@@ -59,51 +59,51 @@ typedef struct {
 extern unsigned PwInterfaceId_File;
 
 typedef struct {
-    [[nodiscard]] bool (*open)(PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode);
+    [[ gnu::warn_unused_result ]] bool (*open)(PwValuePtr self, PwValuePtr file_name, int flags, mode_t mode);
     /*
      * Open or create file with `open` function from standard C library.
      * `mode` is unused when file is not created
      */
 
-    [[nodiscard]] bool (*close)(PwValuePtr self);
+    [[ gnu::warn_unused_result ]] bool (*close)(PwValuePtr self);
     /*
      * Close file if was opened with `open` method or set with ownership transfer.
      */
 
-    [[nodiscard]] int (*get_fd)(PwValuePtr self);
+    [[ gnu::warn_unused_result ]] int (*get_fd)(PwValuePtr self);
     /*
      * Returns file descriptor or -1.
      */
 
-    [[nodiscard]] bool (*set_fd)(PwValuePtr self, int fd, bool take_ownership);
+    [[ gnu::warn_unused_result ]] bool (*set_fd)(PwValuePtr self, int fd, bool take_ownership);
     /*
      * Set file descriptor obtained elsewhere.
      * If `take_ownership` is true, File takes the ownership and fd will be closed by `close` method.
      */
 
-    [[nodiscard]] bool (*get_name)(PwValuePtr self, PwValuePtr result);
+    [[ gnu::warn_unused_result ]] bool (*get_name)(PwValuePtr self, PwValuePtr result);
     /*
      * Get file name.
      */
 
-    [[nodiscard]] bool (*set_name)(PwValuePtr self, PwValuePtr file_name);
+    [[ gnu::warn_unused_result ]] bool (*set_name)(PwValuePtr self, PwValuePtr file_name);
     /*
      * Set file name.
      * This works only if file descriptor was set with `set_fd` method.
      */
 
-    [[nodiscard]] bool (*set_nonblocking)(PwValuePtr self, bool mode);
+    [[ gnu::warn_unused_result ]] bool (*set_nonblocking)(PwValuePtr self, bool mode);
     /*
      * Set/reset nonblocking mode for file descriptor.
      */
 
-    [[nodiscard]] bool (*seek)(PwValuePtr self, off_t offset, int whence, off_t* position);
+    [[ gnu::warn_unused_result ]] bool (*seek)(PwValuePtr self, off_t offset, int whence, off_t* position);
     /*
      * XXX all clear but a good comment would be good
      * position can be nullptr
      */
 
-    [[nodiscard]] bool (*tell)(PwValuePtr self, off_t* position);
+    [[ gnu::warn_unused_result ]] bool (*tell)(PwValuePtr self, off_t* position);
     /*
      * XXX all clear but a good comment would be good
      */
@@ -121,7 +121,7 @@ extern unsigned PwInterfaceId_BufferedFile;
 
 typedef struct {
 
-    [[nodiscard]] bool (*flush)(PwValuePtr self);
+    [[ gnu::warn_unused_result ]] bool (*flush)(PwValuePtr self);
     /*
      * Flush write buffer.
      */

@@ -104,7 +104,7 @@ extern unsigned PwInterfaceId_Socket;
 
 typedef struct {
 
-    [[nodiscard]] bool (*bind)(PwValuePtr self, PwValuePtr local_addr);
+    [[ gnu::warn_unused_result ]] bool (*bind)(PwValuePtr self, PwValuePtr local_addr);
     /*
      * Set `local_addr` in _PwSocketData structure and call `bind` function.
      *
@@ -117,24 +117,24 @@ typedef struct {
      * as a name in Linux abstract namespace.
      */
 
-    [[nodiscard]] bool (*reuse_addr)(PwValuePtr self, bool reuse);
+    [[ gnu::warn_unused_result ]] bool (*reuse_addr)(PwValuePtr self, bool reuse);
     /*
      * Set or clear SO_REUSEADDR option for socket.
      */
 
-    [[nodiscard]] bool (*set_nonblocking)(PwValuePtr self, bool mode);
+    [[ gnu::warn_unused_result ]] bool (*set_nonblocking)(PwValuePtr self, bool mode);
     /*
      * Set/reset nonblocking mode for socket.
      */
 
-    [[nodiscard]] bool (*listen)(PwValuePtr self, int backlog);
+    [[ gnu::warn_unused_result ]] bool (*listen)(PwValuePtr self, int backlog);
     /*
      * Call `listen`, set listen_backlog
      *
      * If backlog is 0, it is set to 5.
      */
 
-    [[nodiscard]] bool (*accept)(PwValuePtr self, PwValuePtr result);
+    [[ gnu::warn_unused_result ]] bool (*accept)(PwValuePtr self, PwValuePtr result);
     /*
      * Accept incoming connection on listening socket
      * and return new socket with `remote_addr` initialized
@@ -144,7 +144,7 @@ typedef struct {
      * which means that AsyncSocket is returned if self is AsyncSocket.
      */
 
-    [[nodiscard]] bool (*connect)(PwValuePtr self, PwValuePtr remote_addr);
+    [[ gnu::warn_unused_result ]] bool (*connect)(PwValuePtr self, PwValuePtr remote_addr);
     /*
      * Set `remote_addr` in _PwSocketData structure and call `connect` function.
      *
@@ -160,7 +160,7 @@ typedef struct {
      * (originally errnos are different, see man page).
      */
 
-    [[nodiscard]] bool (*shutdown)(PwValuePtr self, int how);
+    [[ gnu::warn_unused_result ]] bool (*shutdown)(PwValuePtr self, int how);
     /*
      * Call `shutdown` function.
      */
