@@ -1,6 +1,6 @@
 #include "include/pw.h"
 #include "include/pw_utf.h"
-#include "src/pw_string_internal.h"
+#include "src/string/pw_string_internal.h"
 
 char32_t _pw_decode_utf8_char(char8_t** str)
 {

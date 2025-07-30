@@ -1,7 +1,6 @@
 #include "include/pw.h"
 #include "src/pw_interfaces_internal.h"
-#include "src/pw_string_internal.h"
-#include "src/pw_struct_internal.h"
+#include "src/string/pw_string_internal.h"
 
 typedef struct {
     // line reader iterator data

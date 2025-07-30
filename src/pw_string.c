@@ -4,9 +4,8 @@
 #include <libpussy/dump.h>
 
 #include "include/pw.h"
-#include "include/pw_utf.h"
 #include "src/pw_alloc.h"
-#include "src/pw_string_internal.h"
+#include "src/string/pw_string_internal.h"
 
 [[noreturn]]
 void _pw_panic_bad_char_size(uint8_t char_size)
@@ -1205,52 +1204,6 @@ bool _pw_endswith(PwValuePtr str, PwValuePtr suffix)
     unsigned str_len = pw_strlen(str);
     unsigned suffix_len = pw_strlen(suffix);
     return _pw_substring_eq(str, str_len - suffix_len, str_len, suffix);
-}
-
-bool _pw_strstr_utf8(PwValuePtr str, char8_t* substr, unsigned start_pos, unsigned* pos)
-{
-    return false;
-}
-
-bool _pw_strstr(PwValuePtr str, PwValuePtr substr, unsigned start_pos, unsigned* pos)
-{
-    pw_assert_string(str);
-    pw_assert_string(substr);
-    PW_STRING_ITER(isub, substr);
-    if (PW_STRING_ITER_DONE(isub)) {
-        // zero length substr
-        return false;
-    }
-    char32_t start_codepoint = PW_STRING_ITER_NEXT(isub);
-    PW_STRING_ITER_FROM(istr, str, start_pos);
-    while (!PW_STRING_ITER_DONE(istr)) {
-        char32_t codepoint = PW_STRING_ITER_NEXT(istr);
-        if (codepoint == start_codepoint) {
-            for (;;) {
-                bool str_done = PW_STRING_ITER_DONE(istr);
-                bool sub_done = PW_STRING_ITER_DONE(isub);
-                if (sub_done) {
-                    if (pos) {
-                        *pos = start_pos;
-                    }
-                    return true;
-                }
-                if (str_done) {
-            not_a_match:
-                    PW_STRING_ITER_RESET_FROM(isub, substr, 1);
-                    PW_STRING_ITER_RESET_FROM(istr, str, start_pos);
-                    break;
-                }
-                char32_t a = PW_STRING_ITER_NEXT(istr);
-                char32_t b = PW_STRING_ITER_NEXT(isub);
-                if (a != b) {
-                    goto not_a_match;
-                }
-            }
-        }
-        start_pos++;
-    }
-    return false;
 }
 
 bool _pw_strstri_utf8(PwValuePtr str, char8_t* substr, unsigned start_pos, unsigned* pos)

@@ -40,6 +40,9 @@ add_library(petway STATIC
     src/pw_task.c
     src/pw_types.c
     src/pw_utf.c
+    src/string/strchr.c
+    src/string/strstr.c
+    src/string/substrcmp.c
 )
 
 target_include_directories(petway PUBLIC . include libpussy)

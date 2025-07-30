@@ -9,7 +9,7 @@
 #include "include/pw_socket.h"
 #include "include/pw_to_json.h"
 #include "include/pw_utf.h"
-#include "src/pw_string_internal.h"
+#include "src/string/pw_string_internal.h"
 
 int num_tests = 0;
 int num_ok = 0;

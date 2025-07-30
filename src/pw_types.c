@@ -6,7 +6,7 @@
 #include "src/pw_array_internal.h"
 #include "src/pw_compound_internal.h"
 #include "src/pw_interfaces_internal.h"
-#include "src/pw_string_internal.h"
+#include "src/string/pw_string_internal.h"
 #include "src/pw_struct_internal.h"
 
 PwType** _pw_types = nullptr;

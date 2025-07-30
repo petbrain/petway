@@ -5,7 +5,6 @@
 #include "include/pw_parse.h"
 #include "src/pw_alloc.h"
 #include "src/pw_array_internal.h"
-#include "src/pw_string_internal.h"
 #include "src/pw_struct_internal.h"
 
 static void array_fini(PwValuePtr self)

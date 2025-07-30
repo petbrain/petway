@@ -57,6 +57,26 @@ static inline uint8_t calc_char_size(char32_t c)
 }
 
 /****************************************************************
+ * strchr variants
+ *
+ * The caller must check the upper range of codepoint.
+ */
+
+typedef uint8_t* (*StrChr)(uint8_t* start_ptr, uint8_t* end_ptr, char32_t codepoint);
+
+extern StrChr _pw_strchr_variants[5];
+
+/****************************************************************
+ * substrcmp variants
+ *
+ * The caller must ensure substr is within str.
+ */
+
+typedef bool (*SubstrCmp)(uint8_t* str_start_ptr, uint8_t* substr_start_ptr, uint8_t* substr_end_ptr);
+
+extern SubstrCmp _pw_substrcmp_variants[5][5];  // [a_char_size][b_char_size]
+
+/****************************************************************
  * Misc. functions
  */
 

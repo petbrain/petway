@@ -6,8 +6,6 @@
 #include "include/pw.h"
 #include "include/pw_utf.h"
 #include "src/pw_interfaces_internal.h"
-#include "src/pw_string_internal.h"
-#include "src/pw_struct_internal.h"
 
 /****************************************************************
  * File type
