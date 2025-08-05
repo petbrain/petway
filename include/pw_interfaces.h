@@ -213,12 +213,6 @@ static inline bool _pw_has_interface(PwTypeId type_id, unsigned interface_id)
     return pw_interface(writer->type_id, Writer)->write(writer, data, size, bytes_written);
 }
 
-[[nodiscard]] bool pw_write_exact(PwValuePtr writeable, void* data, unsigned size);
-/*
- * Write exactly `size` bytes. Return status.
- * XXX blend with bfile_strict_write?
- */
-
 #ifdef __cplusplus
 }
 #endif

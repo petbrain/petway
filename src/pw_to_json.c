@@ -99,7 +99,7 @@ static unsigned estimate_escaped_length(PwValuePtr str, uint8_t* char_size)
     s[0] = '"';
     pw_string_to_utf8_buf(&escaped, &s[1]);
     s[n + 1] = '"';
-    return pw_write_exact(file, s, n + 2);
+    return pw_write(file, s, n + 2, nullptr);
 }
 
 static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigned depth, uint8_t* max_char_size)
@@ -185,11 +185,11 @@ static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigne
 {
     unsigned num_items = pw_array_length(value);
 
-    if (!pw_write_exact(file, "[", 1)) {
+    if (!pw_write(file, "[", 1, nullptr)) {
         return false;
     }
     if (num_items == 0) {
-        return pw_write_exact(file, "]",1);
+        return pw_write(file, "]", 1, nullptr);
     }
     unsigned indent_width = indent * depth;
     char indent_str[indent_width + 2];
@@ -200,12 +200,12 @@ static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigne
     bool multiline = indent && num_items > 1;
     for (unsigned i = 0; i < num_items; i++) {{
         if (i) {
-            if (!pw_write_exact(file, ",", 1)) {
+            if (!pw_write(file, ",", 1, nullptr)) {
                 return false;
             }
         }
         if (multiline) {
-            if (!pw_write_exact(file, indent_str, indent_width + 1)) {
+            if (!pw_write(file, indent_str, indent_width + 1, nullptr)) {
                 return false;
             }
         }
@@ -219,11 +219,11 @@ static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigne
     }}
     if (multiline) {
         indent_str[indent * (depth - 1) + 1] = 0;  // dedent closing brace
-        if (!pw_write_exact(file, indent_str, indent * (depth - 1) + 1)) {
+        if (!pw_write(file, indent_str, indent * (depth - 1) + 1, nullptr)) {
             return false;
         }
     }
-    return pw_write_exact(file, "]", 1);
+    return pw_write(file, "]", 1, nullptr);
 }
 
 static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned depth, uint8_t* max_char_size)
@@ -340,11 +340,11 @@ static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned 
 {
     unsigned num_items = pw_map_length(value);
 
-    if (!pw_write_exact(file, "{", 1)) {
+    if (!pw_write(file, "{", 1, nullptr)) {
         return false;
     }
     if (num_items == 0) {
-        return pw_write_exact(file, "}", 1);
+        return pw_write(file, "}", 1, nullptr);
     }
     unsigned indent_width = indent * depth;
     char indent_str[indent_width + 2];
@@ -361,23 +361,23 @@ static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned 
         }
 
         if (i) {
-            if (!pw_write_exact(file, ",", 1)) {
+            if (!pw_write(file, ",", 1, nullptr)) {
                 return false;
             }
         }
         if (multiline) {
-            if (!pw_write_exact(file, indent_str, indent_width + 1)) {
+            if (!pw_write(file, indent_str, indent_width + 1, nullptr)) {
                 return false;
             }
         }
         if (!write_string_to_file(file, &k)) {
             return false;
         }
-        if (!pw_write_exact(file, ":", 1)) {
+        if (!pw_write(file, ":", 1, nullptr)) {
             return false;
         }
         if (indent) {
-            if (!pw_write_exact(file, " ", 1)) {
+            if (!pw_write(file, " ", 1, nullptr)) {
                 return false;
             }
         }
@@ -387,11 +387,11 @@ static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned 
     }}
     if (multiline) {
         indent_str[indent * (depth - 1) + 1] = 0;  // dedent closing brace
-        if (!pw_write_exact(file, indent_str, indent * (depth - 1) + 1)) {
+        if (!pw_write(file, indent_str, indent * (depth - 1) + 1, nullptr)) {
             return false;
         }
     }
-    return pw_write_exact(file, "}", 1);
+    return pw_write(file, "}", 1, nullptr);
 }
 
 static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned depth, uint8_t* max_char_size)
@@ -506,13 +506,13 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
  */
 {
     if (pw_is_null(value)) {
-        return pw_write_exact(file, "null", 4);
+        return pw_write(file, "null", 4, nullptr);
     }
     if (pw_is_bool(value)) {
         if (value->bool_value) {
-            return pw_write_exact(file, "true", 4);
+            return pw_write(file, "true", 4, nullptr);
         } else {
-            return pw_write_exact(file, "false", 5);
+            return pw_write(file, "false", 5, nullptr);
         }
     }
     if (pw_is_signed(value)) {
@@ -522,7 +522,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
             pw_set_status(PwStatus(PW_ERROR));
             return false;
         }
-        return pw_write_exact(file, buf, n);
+        return pw_write(file, buf, n, nullptr);
     }
     if (pw_is_unsigned(value)) {
         char buf[24];
@@ -531,7 +531,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
             pw_set_status(PwStatus(PW_ERROR));
             return false;
         }
-        return pw_write_exact(file, buf, n);
+        return pw_write(file, buf, n, nullptr);
     }
     if (pw_is_float(value)) {
         char buf[320];
@@ -540,7 +540,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
             pw_set_status(PwStatus(PW_ERROR));
             return false;
         }
-        return pw_write_exact(file, buf, n);
+        return pw_write(file, buf, n, nullptr);
     }
     if (pw_is_string(value)) {
         return write_string_to_file(file, value);

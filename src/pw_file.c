@@ -285,17 +285,22 @@ static PwInterface_Reader file_reader_interface = {
 {
     _PwFile* f = get_file_data_ptr(self);
 
-    ssize_t result;
-    do {
-        result = write(f->fd, data, size);
-    } while (result < 0 && errno == EINTR);
+    unsigned written = 0;
+    while (written < size) {
+        ssize_t n;
+        do {
+            n = write(f->fd, ((uint8_t*) data) + written, size - written);
+        } while (n < 0 && errno == EINTR);
 
-    if (result < 0) {
-        *bytes_written = 0;
-        pw_set_status(PwErrno(errno));
-        return false;
+        if (n < 0) {
+            pw_set_status(PwErrno(errno));
+            return false;
+        }
+        written += (unsigned) n;
     }
-    *bytes_written = (unsigned) result;
+    if (bytes_written) {
+        *bytes_written = written;
+    }
     return true;
 }
 
@@ -321,10 +326,6 @@ typedef struct {
     uint8_t* write_buffer;
     unsigned write_buffer_size; // size of write_buffer
     unsigned write_position;    // current position in write_buffer, also it's the size of data
-    off_t    write_offset;      // file position to write the data;
-                                // original position is preserved during write because it's used for reading
-
-    bool is_pipe;
 
     // line reader data
     char8_t  partial_utf8[8];   // UTF-8 sequence may span adjacent reads, the buffer size is for surrogate pair
@@ -413,59 +414,6 @@ static void bfile_dump(PwValuePtr self, FILE* fp, int first_indent, int next_ind
 
 unsigned PwInterfaceId_BufferedFile = 0;
 
-[[nodiscard]] static bool bfile_strict_write(PwValuePtr self, uint8_t* data, unsigned size, unsigned* bytes_written)
-/*
- * Try writing exactly `size` bytes at write_offset, preserving current file position.
- */
-{
-    *bytes_written = 0;
-    if (size == 0) {
-        return true;
-    }
-    _PwBufferedFile* f = get_bfile_data_ptr(self);
-
-    off_t saved_pos;
-    if (!f->is_pipe) {
-        if (!file_tell(self, &saved_pos)) {
-            if (pw_is_errno(ESPIPE)) {
-                f->is_pipe = true;
-            } else {
-                return false;
-            }
-        }
-        if (!f->is_pipe) {
-            if (!file_seek(self, f->write_offset, SEEK_SET, nullptr)) {
-                return false;
-            }
-        }
-    }
-    unsigned offset = 0;
-    unsigned remaining = size;
-    do {
-        unsigned n_written;
-        bool ret = file_write(self, data + offset, remaining, &n_written);
-        *bytes_written += n_written;
-        if (!ret) {
-            break;
-        }
-        offset += n_written;
-        remaining -= n_written;
-
-    } while (remaining);
-
-    if (!f->is_pipe) {
-        off_t new_pos;
-        if (!file_tell(self, &new_pos)) {
-            return false;
-        }
-        f->write_offset = new_pos;
-
-        if (!file_seek(self, saved_pos, SEEK_SET, nullptr)) {
-            return false;
-        }
-    }
-    return true;
-}
 
 [[nodiscard]] static bool bfile_flush(PwValuePtr self)
 {
@@ -482,16 +430,15 @@ unsigned PwInterfaceId_BufferedFile = 0;
     }
 
     unsigned bytes_written;
-    if (!bfile_strict_write(self, f->write_buffer, f->write_position, &bytes_written)) {
+    if (!file_write(self, f->write_buffer, f->write_position, &bytes_written)) {
         f->write_position = 0;
         return false;
     }
-    unsigned remaining = f->write_position - bytes_written;
-    if (remaining) {
+    f->write_position -= bytes_written;
+    if (f->write_position) {
         // move unwritten data to the beginning of `data`
-        memmove(f->write_buffer, f->write_buffer + bytes_written, remaining);
+        memmove(f->write_buffer, f->write_buffer + bytes_written, f->write_position);
     }
-    f->write_position = 0;
     return true;
 }
 
@@ -511,7 +458,6 @@ static void reset_bfile_data(PwValuePtr self)
     f->read_data_size = 0;
     f->read_position = 0;
     f->write_position = 0;
-    f->write_offset = 0;
     f->partial_utf8_len = 0;
     pw_destroy(&f->pushback);
 }
@@ -560,25 +506,15 @@ static void stop_read_lines(PwValuePtr self);
         pw_set_status(PwStatus(PW_ERROR_ITERATION_IN_PROGRESS));
         return false;
     }
+    // reset read buffer
+    f->read_data_size = 0;
+    f->read_position = 0;
     // flush write buffer
     if (!bfile_flush(self)) {
         return false;
     }
     // seek
-    if (!file_seek(self, offset, whence, position)) {
-        return false;
-    }
-    // reset read buffer
-    f->read_data_size = 0;
-    f->read_position = 0;
-
-    // set write position
-    off_t pos;
-    if (!file_tell(self, &pos)) {
-        return false;
-    }
-    f->write_offset = pos;
-    return true;
+    return file_seek(self, offset, whence, position);
 }
 
 static PwInterface_File bfile_file_interface = {
@@ -680,7 +616,7 @@ static PwInterface_Reader bfile_reader_interface = {
     // write directly to file
     while (size >= f->write_buffer_size) {{
         unsigned n;
-        bool ret = bfile_strict_write(self, data, f->write_buffer_size, &n);
+        bool ret = file_write(self, data, f->write_buffer_size, &n);
         *bytes_written += n;
         if (!ret) {
             return false;

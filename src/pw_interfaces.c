@@ -233,21 +233,3 @@ void _pw_update_interfaces(PwType* type, PwType* ancestor, va_list ap)
         }
     }
 }
-
-
-/****************************************************************
- * Miscellaneous functions
- */
-
-[[nodiscard]] bool pw_write_exact(PwValuePtr writeable, void* data, unsigned size)
-{
-    unsigned bytes_written;
-    if (!pw_write(writeable, data, size, &bytes_written)) {
-        return false;
-    }
-    if (bytes_written != size) {
-        pw_set_status(PwStatus(PW_ERROR_WRITE));
-        return false;
-    }
-    return true;
-}
