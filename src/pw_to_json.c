@@ -148,10 +148,9 @@ static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigne
         return pw_string_append(result, ']');
     }
     unsigned indent_width = indent * depth;
-    char indent_str[indent_width + 2];
+    char indent_str[indent_width + 1];
     indent_str[0] = '\n';
     memset(&indent_str[1], ' ', indent_width);
-    indent_str[indent_width + 1] = 0;
 
     bool multiline = indent && num_items > 1;
     for (unsigned i = 0; i < num_items; i++) {{
@@ -161,7 +160,7 @@ static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigne
             }
         }
         if (multiline) {
-            if (!pw_string_append(result, indent_str)) {
+            if (!pw_string_append(result, indent_str, indent_str + indent_width + 1)) {
                 return false;
             }
         }
@@ -174,8 +173,8 @@ static unsigned estimate_array_length(PwValuePtr value, unsigned indent, unsigne
         }
     }}
     if (multiline) {
-        indent_str[indent * (depth - 1) + 1] = 0;  // dedent closing brace
-        if (!pw_string_append(result, indent_str)) {
+        // dedent closing brace
+        if (!pw_string_append(result, indent_str, indent_str + indent * (depth - 1) + 1)) {
             return false;
         }
     }
@@ -285,10 +284,9 @@ static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned 
         return pw_string_append(result, '}');
     }
     unsigned indent_width = indent * depth;
-    char indent_str[indent_width + 2];
+    char indent_str[indent_width + 1];
     indent_str[0] = '\n';
     memset(&indent_str[1], ' ', indent_width);
-    indent_str[indent_width + 1] = 0;
 
     bool multiline = indent && num_items > 1;
     for (unsigned i = 0; i < num_items; i++) {{
@@ -303,7 +301,7 @@ static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned 
             }
         }
         if (multiline) {
-            if (!pw_string_append(result, indent_str)) {
+            if (!pw_string_append(result, indent_str, indent_str + indent_width + 1)) {
                 return false;
             }
         }
@@ -317,7 +315,7 @@ static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned 
         if (!pw_string_append(result, &escaped)) {
             return false;
         }
-        if (!pw_string_append(result, "\":")) {
+        if (!pw_string_append(result, "\":", nullptr)) {
             return false;
         }
         if (indent) {
@@ -330,8 +328,8 @@ static unsigned estimate_map_length(PwValuePtr value, unsigned indent, unsigned 
         }
     }}
     if (multiline) {
-        indent_str[indent * (depth - 1) + 1] = 0;  // dedent closing brace
-        if (!pw_string_append(result, indent_str)) {
+        // dedent closing brace
+        if (!pw_string_append(result, indent_str, indent_str + indent * (depth - 1) + 1)) {
             return false;
         }
     }
@@ -442,10 +440,10 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
  */
 {
     if (pw_is_null(value)) {
-        return pw_string_append(result, "null");
+        return pw_string_append(result, "null", nullptr);
     }
     if (pw_is_bool(value)) {
-        return pw_string_append(result, (value->bool_value)? "true" : "false");
+        return pw_string_append(result, (value->bool_value)? "true" : "false", nullptr);
     }
     if (pw_is_signed(value)) {
         char buf[24];
@@ -454,7 +452,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
             pw_set_status(PwStatus(PW_ERROR));
             return false;
         }
-        return pw_string_append(result, buf);
+        return pw_string_append(result, buf, buf + n);
     }
     if (pw_is_unsigned(value)) {
         char buf[24];
@@ -463,7 +461,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
             pw_set_status(PwStatus(PW_ERROR));
             return false;
         }
-        return pw_string_append(result, buf);
+        return pw_string_append(result, buf, buf + n);
     }
     if (pw_is_float(value)) {
         char buf[320];
@@ -472,7 +470,7 @@ static unsigned estimate_length(PwValuePtr value, unsigned indent, unsigned dept
             pw_set_status(PwStatus(PW_ERROR));
             return false;
         }
-        return pw_string_append(result, buf);
+        return pw_string_append(result, buf, buf + n);
     }
     if (pw_is_string(value)) {
         PwValue escaped = PW_NULL;

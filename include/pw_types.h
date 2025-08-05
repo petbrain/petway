@@ -1,8 +1,10 @@
 #pragma once
 
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <uchar.h>
 
 #include <libpussy/allocator.h>
@@ -120,6 +122,9 @@ typedef struct {
 
 // make sure largest C type fits into 64 bits
 static_assert( sizeof(long long) <= sizeof(uint64_t) );
+
+// check UTF-32 char size
+static_assert( sizeof(char32_t) == 4 );
 
 union __PwValue {
     /*
@@ -473,6 +478,24 @@ void pw_dump_types(FILE* fp);
 #define pw_create(type_id, result)              _pw_types[type_id]->create((type_id), nullptr, (result))
 #define pw_create2(type_id, ctor_args, result)  _pw_types[type_id]->create((type_id), (ctor_args), (result))
 
+/****************************************************************
+ * String constructors
+ */
+
+[[nodiscard]] bool pw_create_empty_string(unsigned capacity, uint8_t char_size, PwValuePtr result);
+
+#define pw_create_string(initializer, result) _Generic((initializer),  \
+                 char*: _pw_create_string_ascii, \
+              char8_t*: _pw_create_string_utf8,  \
+             char32_t*: _pw_create_string_utf32, \
+            PwValuePtr: _pw_create_string        \
+    )((initializer), (result))
+
+[[nodiscard]] bool _pw_create_string      (PwValuePtr initializer, PwValuePtr result);
+[[nodiscard]] bool _pw_create_string_ascii(char*      initializer, PwValuePtr result);
+[[nodiscard]] bool _pw_create_string_utf8 (char8_t*   initializer, PwValuePtr result);
+[[nodiscard]] bool _pw_create_string_utf32(char32_t*  initializer, PwValuePtr result);
+
 
 /****************************************************************
  * Initializers and rvalues
@@ -580,7 +603,6 @@ void pw_dump_types(FILE* fp);
         s;  \
     })
 
-
 #define PW_STATIC_STRING(initializer)  \
     /* Static string, character size 1 byte */  \
     {  \
@@ -589,6 +611,19 @@ void pw_dump_types(FILE* fp);
         ._s_length = sizeof(initializer) - 1,  \
         .char_ptr = initializer  \
     }
+
+#define PwStaticString(initializer)  \
+    /* make static String rvalue, character size 1 byte */  \
+    __extension__ \
+    ({  \
+        _PwValue s = {  \
+            ._s_string_type_id = PwTypeId_String,  \
+            ._s_char_size = 1,  \
+            .char_ptr = initializer  \
+        };  \
+        s.length = strlen(initializer);  \
+        s;  \
+    })
 
 #define PW_STATIC_STRING_UTF32(initializer)  \
     /* Static UTF-32 string */  \
@@ -599,14 +634,18 @@ void pw_dump_types(FILE* fp);
         .char_ptr = initializer  \
     }
 
-#define PwStaticString(initializer) _Generic((initializer),  \
-             char*: _pw_create_static_string_ascii,  \
-         char32_t*: _pw_create_static_string_utf32   \
-    )((initializer))
-[[nodiscard]] _PwValue _pw_create_static_string_ascii(char* initializer);
-[[nodiscard]] _PwValue _pw_create_static_string_utf32(char32_t* initializer);
-
-[[nodiscard]] _PwValue PwStringUtf8 (char8_t*  initializer);
+#define PwStaticStringUtf32(initializer)  \
+    /* make static String rvalue, character size 4 bytes */  \
+    __extension__ \
+    ({  \
+        _PwValue s = {  \
+            ._s_string_type_id = PwTypeId_String,  \
+            ._s_char_size = 4,  \
+            .char_ptr = initializer  \
+        };  \
+        s.length = utf32_strlen(initializer);  \
+        s;  \
+    })
 
 #define PW_DATETIME  \
     {  \
@@ -870,47 +909,59 @@ bool _pw_abandon(PwValuePtr parent, PwValuePtr child);
     return cmp(a, b);
 }
 
-#define pw_equal(a, b) _Generic((b),           \
-             nullptr_t: _pwc_equal_null,       \
-                  bool: _pwc_equal_bool,       \
-                  char: _pwc_equal_char,       \
-         unsigned char: _pwc_equal_uchar,      \
-                 short: _pwc_equal_short,      \
-        unsigned short: _pwc_equal_ushort,     \
-                   int: _pwc_equal_int,        \
-          unsigned int: _pwc_equal_uint,       \
-                  long: _pwc_equal_long,       \
-         unsigned long: _pwc_equal_ulong,      \
-             long long: _pwc_equal_longlong,   \
-    unsigned long long: _pwc_equal_ulonglong,  \
-                 float: _pwc_equal_float,      \
-                double: _pwc_equal_double,     \
-                 char*: _pwc_equal_ascii,      \
-              char8_t*: _pwc_equal_utf8,       \
-             char32_t*: _pwc_equal_utf32,      \
-            PwValuePtr: _pw_equal              \
+#define pw_equal(a, b) _Generic((b),          \
+             nullptr_t: _pw_equal_null,       \
+                  bool: _pw_equal_bool,       \
+                  char: _pw_equal_char,       \
+         unsigned char: _pw_equal_uchar,      \
+                 short: _pw_equal_short,      \
+        unsigned short: _pw_equal_ushort,     \
+                   int: _pw_equal_int,        \
+          unsigned int: _pw_equal_uint,       \
+                  long: _pw_equal_long,       \
+         unsigned long: _pw_equal_ulong,      \
+             long long: _pw_equal_longlong,   \
+    unsigned long long: _pw_equal_ulonglong,  \
+                 float: _pw_equal_float,      \
+                double: _pw_equal_double,     \
+                 char*: _pw_equal_ascii,      \
+              char8_t*: _pw_equal_utf8,       \
+             char32_t*: _pw_equal_utf32,      \
+            PwValuePtr: _pw_equal             \
     )((a), (b))
 /*
  * Type-generic compare for equality.
  */
 
-[[nodiscard]] static inline bool _pwc_equal_null     (PwValuePtr a, nullptr_t          b) { return pw_is_null(a); }
-[[nodiscard]] static inline bool _pwc_equal_bool     (PwValuePtr a, bool               b) { _PwValue v = PW_BOOL(b);        return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_char     (PwValuePtr a, char               b) { _PwValue v = PW_SIGNED(b);      return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_uchar    (PwValuePtr a, unsigned char      b) { _PwValue v = PW_UNSIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_short    (PwValuePtr a, short              b) { _PwValue v = PW_SIGNED(b);      return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_ushort   (PwValuePtr a, unsigned short     b) { _PwValue v = PW_UNSIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_int      (PwValuePtr a, int                b) { _PwValue v = PW_SIGNED(b);      return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_uint     (PwValuePtr a, unsigned int       b) { _PwValue v = PW_UNSIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_long     (PwValuePtr a, long               b) { _PwValue v = PW_SIGNED(b);      return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_ulong    (PwValuePtr a, unsigned long      b) { _PwValue v = PW_UNSIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_longlong (PwValuePtr a, long long          b) { _PwValue v = PW_SIGNED(b);      return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_ulonglong(PwValuePtr a, unsigned long long b) { _PwValue v = PW_UNSIGNED(b);    return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_float    (PwValuePtr a, float              b) { _PwValue v = PW_FLOAT(b);       return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_double   (PwValuePtr a, double             b) { _PwValue v = PW_FLOAT(b);       return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_ascii    (PwValuePtr a, char*              b) { _PwValue v = PwStaticString(b); return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_utf8     (PwValuePtr a, char8_t*           b) {  PwValue v = PwStringUtf8  (b); return _pw_equal(a, &v); }
-[[nodiscard]] static inline bool _pwc_equal_utf32    (PwValuePtr a, char32_t*          b) { _PwValue v = PwStaticString(b); return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_null     (PwValuePtr a, nullptr_t          b) { return pw_is_null(a); }
+[[nodiscard]] static inline bool _pw_equal_bool     (PwValuePtr a, bool               b) { _PwValue v = PW_BOOL(b);     return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_char     (PwValuePtr a, char               b) { _PwValue v = PW_SIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_uchar    (PwValuePtr a, unsigned char      b) { _PwValue v = PW_UNSIGNED(b); return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_short    (PwValuePtr a, short              b) { _PwValue v = PW_SIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_ushort   (PwValuePtr a, unsigned short     b) { _PwValue v = PW_UNSIGNED(b); return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_int      (PwValuePtr a, int                b) { _PwValue v = PW_SIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_uint     (PwValuePtr a, unsigned int       b) { _PwValue v = PW_UNSIGNED(b); return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_long     (PwValuePtr a, long               b) { _PwValue v = PW_SIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_ulong    (PwValuePtr a, unsigned long      b) { _PwValue v = PW_UNSIGNED(b); return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_longlong (PwValuePtr a, long long          b) { _PwValue v = PW_SIGNED(b);   return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_ulonglong(PwValuePtr a, unsigned long long b) { _PwValue v = PW_UNSIGNED(b); return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_float    (PwValuePtr a, float              b) { _PwValue v = PW_FLOAT(b);    return _pw_equal(a, &v); }
+[[nodiscard]] static inline bool _pw_equal_double   (PwValuePtr a, double             b) { _PwValue v = PW_FLOAT(b);    return _pw_equal(a, &v); }
+
+[[nodiscard]] bool _pw_equal_z(PwValuePtr a, void* b, uint8_t b_char_size);
+
+[[nodiscard]] static inline bool _pw_equal_ascii(PwValuePtr a, char* b)
+{
+    return _pw_equal_z(a, b, 1);
+}
+[[nodiscard]] static inline bool _pw_equal_utf8(PwValuePtr a, char8_t* b)
+{
+    return _pw_equal_z(a, b, 0);
+}
+[[nodiscard]] static inline bool _pw_equal_utf32(PwValuePtr a, char32_t* b)
+{
+    return _pw_equal_z(a, b, 4);
+}
 
 #ifdef __cplusplus
 }

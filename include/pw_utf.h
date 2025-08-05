@@ -17,13 +17,11 @@ char32_t _pw_decode_utf8_char(char8_t** str);
  * Return decoded character or 0xFFFFFFFF if UTF-8 sequence is invalid.
  */
 
-bool _pw_decode_utf8_char_reverse(char8_t** ptr, char8_t* str_start, char32_t* result);
+char32_t _pw_decode_utf8_char_reverse(char8_t** ptr);
 /*
- * Decode UTF-8 character from `*ptr` downwards, stop at `str_start`.
+ * Decode UTF-8 character from `*ptr` downwards.
  *
  * Result is decoded character or 0xFFFFFFFF if UTF-8 sequence is invalid.
- *
- * Return false if `*ptr` goes below `str_start`.
  */
 
 bool _pw_decode_utf8_buffer(char8_t** ptr, unsigned* bytes_remaining, char32_t* result);
@@ -62,6 +60,11 @@ unsigned utf8_strlen2(char8_t* str, uint8_t* char_size);
 /*
  * Count the number of codepoints in UTF8-encoded string
  * and find max char size.
+ */
+
+unsigned utf8_strlen3(char8_t* str, uint8_t* char_size, char8_t** end_ptr);
+/*
+ * Same as utf8_strlen2, plus writes the pointer to the terminating 0 character to `end_ptr`.
  */
 
 unsigned utf8_strlen2_buf(char8_t* buffer, unsigned* size, uint8_t* char_size);

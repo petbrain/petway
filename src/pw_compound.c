@@ -51,7 +51,7 @@ static inline _PwParentsChunk* get_parents_list(_PwCompoundData* cdata)
     if (parent_cdata == child_cdata) {
 success:
         child_cdata->struct_data.refcount--;
-        return true;;
+        return true;
     }
     if (child_cdata->using_parents_list) {
 

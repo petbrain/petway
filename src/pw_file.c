@@ -135,7 +135,7 @@ unsigned PwInterfaceId_File = 0;
 [[ nodiscard]] static bool file_close(PwValuePtr self)
 {
     _PwFile* f = get_file_data_ptr(self);
-    bool ret = true;;
+    bool ret = true;
     if (f->fd != -1 && f->own_fd) {
         int result;
         do {

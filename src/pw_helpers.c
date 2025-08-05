@@ -26,7 +26,11 @@ bool _pw_get(PwValuePtr result, PwValuePtr container, ...)
         PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
 
         // get value by key
-        PwValue k = PwStringUtf8(key);
+        PwValue k = PW_NULL;
+        if (!pw_create_string(key, &k)) {
+            va_end(ap);
+            return false;
+        }
         if (!methods->get_item(&obj, &k, result)) {
             va_end(ap);
             return false;
@@ -66,7 +70,11 @@ bool _pw_set(PwValuePtr value, PwValuePtr container, ...)
         PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
 
         // get nested object by key
-        PwValue k = PwStringUtf8(key);
+        PwValue k = PW_NULL;
+        if (!pw_create_string(key, &k)) {
+            va_end(ap);
+            return false;
+        }
         PwValue nested_obj = PW_NULL;
         if (!methods->get_item(&obj, &k, &nested_obj)) {
             va_end(ap);
@@ -85,7 +93,10 @@ bool _pw_set(PwValuePtr value, PwValuePtr container, ...)
         return false;
     }
     PwInterface_RandomAccess* methods = (PwInterface_RandomAccess*) interface->interface_methods;
-    PwValue k = PwStringUtf8(key);
+    PwValue k = PW_NULL;
+    if (!pw_create_string(key, &k)) {
+        return false;
+    }
     return methods->set_item(&obj, &k, value);
 }
 
@@ -97,16 +108,16 @@ bool pw_read_environment(PwValuePtr result)
         return false;
     }
     for (char** env = environ;;) {{
-        char* var = *env++;
+        char8_t* var = (char8_t*) *env++;
         if (var == nullptr) {
             return true;
         }
-        char* separator = strchr(var, '=');
+        char8_t* separator = (char8_t*) strchr((char*) var, '=');
         if (!separator) {
             continue;
         }
         PwValue key = PW_STRING("");
-        if (!pw_string_append_substring(&key, var, 0, separator - var)) {
+        if (!pw_string_append(&key, var, separator)) {
             return false;
         }
         PwValue value = PW_NULL;

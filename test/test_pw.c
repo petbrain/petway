@@ -390,7 +390,7 @@ void test_string()
         TEST(v.char_size == 1);
         //pw_dump(stderr, &v);
 
-        if (!pw_string_append(&v, "hello")) {
+        if (!pw_string_append(&v, "hello", nullptr)) {
             panic();
         }
         TEST(pw_strlen(&v) == 5);
@@ -415,7 +415,7 @@ void test_string()
         TEST(v.char_size == 1);
         //pw_dump(stderr, &v);
 
-        if (!pw_string_append(&v, "pet")) {
+        if (!pw_string_append(&v, "pet", nullptr)) {
             panic();
         }
         if (!pw_string_erase(&v, 5, 255)) {
@@ -486,22 +486,20 @@ void test_string()
         //pw_dump(stderr, &v);
 
         // test append substring
-        if (!pw_string_append_substring(&v, "0123456789", 3, 7)) {
+        PwValue sub = PW_STATIC_STRING("0123456789");
+        PwValue sub32 = PW_STATIC_STRING_UTF32(U"0123456789");
+        if (!pw_string_append_substring(&v, &sub, 3, 7)) {
             panic();
         }
         TEST(pw_equal(&v, "3456"));
-        if (!pw_string_append_substring(&v, u8"0123456789", 3, 7)) {
+        if (!pw_string_append_substring(&v, &sub, 3, 7)) {
             panic();
         }
         TEST(pw_equal(&v, "34563456"));
-        if (!pw_string_append_substring(&v, U"0123456789", 3, 7)) {
+        if (!pw_string_append_substring(&v, &sub32, 3, 7)) {
             panic();
         }
         TEST(pw_equal(&v, "345634563456"));
-
-        unsigned pos;
-        TEST(pw_strstr(&v, "563", 0, &pos));
-        TEST(pos == 2);
         //pw_dump(stderr, &v);
 
         if (!pw_string_truncate(&v, 0)) {
@@ -509,12 +507,11 @@ void test_string()
         }
 
         // change char size to 2-byte by appending wider chars -- the string will be copied
-// XXX v.char_size is 4, the following tests fail
-        if (!pw_string_append(&v, u8"สวัสดี")) {
+        if (!pw_string_append(&v, u8"สวัสดี", nullptr)) {
             panic();
         }
         TEST(pw_strlen(&v) == 6);
-        TEST(_pw_string_capacity(&v) == 268);  // capacity is slightly changed because of alignment and char_size increase
+        TEST(v.embedded);
         TEST(v.char_size == 2);
         TEST(pw_equal(&v, u8"สวัสดี"));
         //pw_dump(stderr, &v);
@@ -530,7 +527,7 @@ void test_string()
         TEST(v.char_size == 2);
         //pw_dump(stderr, &v);
 
-        if (!pw_string_append(&v, u8"สบาย")) {
+        if (!pw_string_append(&v, u8"สบาย", nullptr)) {
             panic();
         }
         TEST(pw_strlen(&v) == 4);
@@ -567,14 +564,16 @@ void test_string()
         TEST(v.char_size == 2);
         //pw_dump(stderr, &v);
 
-        if (!pw_string_append(&v, U"สบาย")) {
+        if (!pw_string_append(&v, U"สบาย", nullptr)) {
             panic();
         }
+        //pw_dump(stderr, &v);
         if (!pw_string_erase(&v, 4, 255)) {
             panic();
         }
         TEST(pw_equal(&v, u8"สบายสบาย"));
         TEST(!pw_equal(&v, ""));
+        //pw_dump(stderr, &v);
 
         // test comparison
         PwValue v2 = PW_NULL;
@@ -618,11 +617,12 @@ void test_string()
         TEST(pw_equal(&v, ""));
 
         // test append substring
-        if (!pw_string_append_substring(&v, u8"สบายสบาย", 1, 4)) {
+        PwValue sub = PW_STATIC_STRING_UTF32(U"สบายสบาย");
+        if (!pw_string_append_substring(&v, &sub, 1, 4)) {
             panic();
         }
         TEST(pw_equal(&v, u8"บาย"));
-        if (!pw_string_append_substring(&v, U"สบายสบาย", 1, 4)) {
+        if (!pw_string_append_substring(&v, &sub, 1, 4)) {
             panic();
         }
         TEST(pw_equal(&v, U"บายบาย"));
@@ -630,7 +630,6 @@ void test_string()
             panic();
         }
         TEST(pw_strlen(&v) == 0);
-// XXX the following test fails, need to shrink char size
         TEST(_pw_string_capacity(&v) == 260);
         //pw_dump(stderr, &v);
     }
@@ -672,12 +671,17 @@ void test_string()
         }
         TEST(pw_equal(&v, u8"สวัสดี"));
         TEST(pw_strlen(&v) == 6);
+        //pw_dump(stderr, &v);
     }
 
     { // test pw_strcat (by value)
         PwValue v = PW_NULL;
-        if (!pw_strcat(&v, PwStaticString("Hello! "), PwString("Thanks"),
-                       PwStringUtf32(U"🙏"), PwStringUtf8(u8"สวัสดี"))) {
+        PwValue a = PW_NULL;
+        if (!pw_create_string(u8"สวัสดี", &a)) {
+            panic();
+        }
+        if (!pw_strcat(&v, PwString("Hello! "), PwString("Thanks"),
+                       PwStringUtf32(U"🙏"), pw_clone(&a))) {
             panic();
         }
         TEST(pw_equal(&v, U"Hello! Thanks🙏สวัสดี"));
@@ -707,8 +711,11 @@ void test_string()
         if (!pw_array_item(&array2, 1, &last)) {
             panic();
         }
+        //pw_dump(stderr, &first);
+        //pw_dump(stderr, &last);
         TEST(pw_equal(&first, U"สบาย/สบาย/yo"));
         TEST(pw_equal(&last, "yo"));
+        TEST(last.char_size == 1);
         PwValue array3 = PW_NULL;
         if (!pw_string_split_chr(&str, '/', 1, &array3)) {
             panic();
@@ -724,6 +731,7 @@ void test_string()
         }
         TEST(pw_equal(&first3, U"สบาย"));
         TEST(pw_equal(&last3, U"สบาย/yo/yo"));
+        //pw_dump(stderr, &last3);
         PwValue v = PW_NULL;
         if (!pw_array_join('/', &array, &v)) {
             panic();
@@ -738,7 +746,7 @@ void test_string()
 
         PwValue str = PW_STRING("");
 
-        if (!pw_string_append_buffer(&str, data, sizeof(data))) {
+        if (!pw_string_append(&str, data, data + sizeof(data))) {
             panic();
         }
         TEST(_pw_string_capacity(&str) >= pw_strlen(&str));
@@ -864,6 +872,53 @@ void test_string()
         TEST(pw_isspace(12288));
         TEST(pw_isblank(12288));
     }
+    { // test strstr
+        PwValue str = PW_NULL;
+        if (!pw_create_string("0123456789abcdefghijklmnopqrstuvwxyz", &str)) {
+            panic();
+        }
+        unsigned pos;
+        TEST(pw_strstr(&str, "0123456789abc", 0, &pos));
+        TEST(pos == 0);
+        TEST(pw_strstr(&str, "123456789abcd", 0, &pos));
+        TEST(pos == 1);
+        TEST(pw_strstr(&str, "23456789abcde", 1, &pos));
+        TEST(pos == 2);
+        TEST(pw_strstr(&str, "3456789abcdef", 2, &pos));
+        TEST(pos == 3);
+        TEST(pw_strstr(&str, "456789abcdefg", 3, &pos));
+        TEST(pos == 4);
+        TEST(pw_strstr(&str, "56789abcdefgh", 4, &pos));
+        TEST(pos == 5);
+        TEST(pw_strstr(&str, "6789abcdefghi", 5, &pos));
+        TEST(pos == 6);
+        TEST(pw_strstr(&str, "789abcdefghij", 6, &pos));
+        TEST(pos == 7);
+        TEST(pw_strstr(&str, "89abcdefghijk", 7, &pos));
+        TEST(pos == 8);
+        TEST(pw_strstr(&str, "9abcdefghijkl", 8, &pos));
+        TEST(pos == 9);
+        TEST(pw_strstr(&str, "abcdefghijklm", 9, &pos));
+        TEST(pos == 10);
+        TEST(pw_strstr(&str, "bcdefghijklmn", 0, &pos));
+        TEST(pos == 11);
+        TEST(pw_strstr(&str, "cdefghijklmno", 0, &pos));
+        TEST(pos == 12);
+        TEST(pw_strstr(&str, "defghijklmnop", 0, &pos));
+        TEST(pos == 13);
+        TEST(pw_strstr(&str, "efghijklmnopq", 0, &pos));
+        TEST(pos == 14);
+        TEST(pw_strstr(&str, "fghijklmnopqr", 0, &pos));
+        TEST(pos == 15);
+        TEST(pw_strstr(&str, "ghijklmnopqrs", 0, &pos));
+        TEST(pos == 16);
+        TEST(pw_strstr(&str, "hijklmnopqrst", 0, &pos));
+        TEST(pos == 17);
+        TEST(pw_strstr(&str, "z", 0, &pos));
+        TEST(pos == 35);
+        _pw_string_set_length(&str, 35);
+        TEST(!pw_strstr(&str, "z", 0, &pos));
+    }
 }
 
 void test_array()
@@ -983,10 +1038,13 @@ void test_array()
         if (!pw_create_array(&array)) {
             panic();
         }
-        PwValue sawatdee   = PwStringUtf8(u8"สวัสดี");
+        PwValue sawatdee = PW_NULL;
+        if (!pw_create_string(u8"สวัสดี", &sawatdee)) {
+            panic();
+        }
         PwValue thanks     = PW_STRING("Thanks");
-        PwValue multsumesc = PW_STATIC_STRING_UTF32(U"mulțumesc");
         PwValue wat        = PW_STRING_UTF32(U"🙏");
+        PwValue multsumesc = PW_STATIC_STRING_UTF32(U"mulțumesc");
         if (!pw_array_append(&array, "Hello")) {
             panic();
         }
@@ -1008,11 +1066,10 @@ void test_array()
     }
     { // test dedent
         PwValue array = PW_NULL;
-        if (!pw_array_va(&array,
-                      PwStaticString("   first line"),
-                      PwStaticString("  second line"),
-                      PwStaticString("    third line")
-                     )) {
+        PwValue s1 = PW_STATIC_STRING("   first line");
+        PwValue s2 = PW_STATIC_STRING("  second line");
+        PwValue s3 = PW_STATIC_STRING("    third line");
+        if (!pw_array_va(&array, pw_clone(&s1), pw_clone(&s2), pw_clone(&s3))) {
             panic();
         }
         if (!pw_array_dedent(&array)) {
@@ -1072,12 +1129,11 @@ void test_map()
             PwSigned('b'),            PwSigned(-42),
             PwUnsigned(100),          PwSigned(-1000000L),
             PwUnsigned(300000000ULL), PwFloat(1.23),
-            PwStringUtf8(u8"สวัสดี"),   PwStaticString(U"สบาย"),
             PwString("finally"),      pwva_map(PwString("ok"), PwString("done"))
         )) {
             panic();
         }
-        TEST(pw_map_length(&map) == 9);
+        TEST(pw_map_length(&map) == 8);
         //pw_dump(stderr, &map);
     }
 }
@@ -1160,8 +1216,10 @@ void test_file()
         };
         for (unsigned i = 0; i < PW_LENGTH(sample_files); i++) {{
 
-            PwValue file_name = PwStaticString(sample_files[i]);
-
+            PwValue file_name = PW_NULL;
+            if (!pw_create_string(sample_files[i], &file_name)) {
+                panic();
+            }
             off_t file_size;
             if (!pw_file_size(&file_name, &file_size)) {
                 panic();

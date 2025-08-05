@@ -1,5 +1,4 @@
 #include "include/pw.h"
-#include "include/pw_utf.h"
 #include "src/string/pw_string_internal.h"
 
 char32_t _pw_decode_utf8_char(char8_t** str)
@@ -60,9 +59,10 @@ bad_utf8:
 #   undef APPEND_NEXT
 }
 
-bool _pw_decode_utf8_char_reverse(char8_t** ptr, char8_t* str_start, char32_t* result)
+char32_t _pw_decode_utf8_char_reverse(char8_t** ptr)
 {
     // XXX work in progress
+    // XXX if sequence is wrong, always decrement ptr by 1
 
     char32_t codepoint;
     char8_t c;
@@ -71,9 +71,10 @@ bool _pw_decode_utf8_char_reverse(char8_t** ptr, char8_t* str_start, char32_t* r
     char8_t* end_ptr = p;
 
     // seek to the start of UTF-8 sequence
+    char8_t* str_start = p - 4;
     for (;;) {
-        if (p <= str_start) {
-            return false;
+        if (p < str_start) {
+            goto bad_utf8;
         }
         c = *--p;
         if (c < 0x80) {
@@ -124,11 +125,10 @@ bool _pw_decode_utf8_char_reverse(char8_t** ptr, char8_t* str_start, char32_t* r
 
 done:
     *ptr = p;
-    *result = codepoint;
-    return true;
+    return codepoint;
 
 bad_utf8:
-    *ptr = p;  // XXX ???
+    *ptr = p;
     return 0xFFFFFFFF;
 
 #   undef APPEND_NEXT
@@ -255,6 +255,22 @@ unsigned utf8_strlen2(char8_t* str, uint8_t* char_size)
         }
     }
     *char_size = calc_char_size(width);
+    return length;
+}
+
+unsigned utf8_strlen3(char8_t* str, uint8_t* char_size, char8_t** end_ptr)
+{
+    unsigned length = 0;
+    char32_t width = 0;
+    while(*str != 0) {
+        char32_t c = _pw_decode_utf8_char(&str);
+        if (c != 0xFFFFFFFF) {
+            width |= c;
+            length++;
+        }
+    }
+    *char_size = calc_char_size(width);
+    *end_ptr = str;
     return length;
 }
 
@@ -395,4 +411,28 @@ uint8_t utf32_char_size(char32_t* str, unsigned max_len)
         width |= c;
     }
     return calc_char_size(width);
+}
+
+unsigned pw_strlen_in_utf8(PwValuePtr str)
+{
+    pw_assert_string(str);
+    unsigned length = 0;
+    uint8_t char_size = str->char_size;
+    unsigned n;
+    uint8_t* ptr = _pw_string_start_length(str, &n);
+    while (n) {
+        char32_t c = _pw_get_char(ptr, char_size);
+        if (c < 0x80) {
+            length++;
+        } else if (c < 0b1'00000'000000) {
+            length += 2;
+        } else if (c < 0b1'0000'000000'000000) {
+            length += 3;
+        } else {
+            length += 4;
+        }
+        ptr += char_size;
+        n--;
+    }
+    return length;
 }

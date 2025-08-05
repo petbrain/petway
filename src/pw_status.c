@@ -269,11 +269,11 @@ static void status_hash(PwValuePtr self, PwHashContext* ctx)
     if (!pw_create_empty_string(length + description_length + 2, char_size, result)) {
         goto error;
     }
-    if (!pw_string_append(result, desc)) {
+    if (!pw_string_append(result, desc, desc + length)) {
         goto error;
     }
     if (description_length) {
-        if (!pw_string_append(result, "; ")) {
+        if (!pw_string_append(result, "; ", nullptr)) {
             goto error;
         }
         if (!pw_string_append(result, &status->status_data->description)) {

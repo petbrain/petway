@@ -33,16 +33,43 @@ add_library(petway STATIC
     src/pw_parse.c
     src/pw_socket.c
     src/pw_status.c
-    src/pw_string.c
     src/pw_string_io.c
     src/pw_struct.c
     src/pw_to_json.c
     src/pw_task.c
     src/pw_types.c
-    src/pw_utf.c
+    src/string/append.c
+    src/string/char_at.c
+    src/string/copy.c
+    src/string/create.c
+    src/string/cstring.c
+    src/string/equal_z.c
+    src/string/erase.c
+    src/string/hash.c
+    src/string/insert_many.c
+    src/string/is_ascii_digit.c
+    src/string/isdigit.c
+    src/string/isspace.c
+    src/string/panic.c
+    src/string/pw_string_type.c
+    src/string/rsplit_chr.c
+    src/string/skip_chars.c
+    src/string/skip_spaces.c
+    src/string/split_chr.c
+    src/string/strcat_va.c
     src/string/strchr.c
+    src/string/strchr2.c
+    src/string/strrchr2.c
     src/string/strstr.c
-    src/string/substrcmp.c
+    src/string/strstri.c
+    src/string/strstrz.c
+    src/string/substr.c
+    src/string/substreq.c
+    src/string/substreqz.c
+    src/string/trim.c
+    src/string/truncate.c
+    src/string/upper_lower.c
+    src/string/utf.c
 )
 
 target_include_directories(petway PUBLIC . include libpussy)

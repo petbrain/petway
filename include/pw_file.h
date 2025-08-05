@@ -145,23 +145,9 @@ typedef struct {
 
 [[nodiscard]] bool _pw_file_open(PwValuePtr file_name, int flags, mode_t mode, PwValuePtr result);
 
-[[nodiscard]] static inline bool _pw_file_open_ascii(char*  file_name, int flags, mode_t mode, PwValuePtr result)
-{
-    _PwValue fname = PwStaticString(file_name);
-    return _pw_file_open(&fname, flags, mode, result);
-}
-
-[[nodiscard]] static inline bool _pw_file_open_utf8(char8_t*  file_name, int flags, mode_t mode, PwValuePtr result)
-{
-    PwValue fname = PwStringUtf8(file_name);
-    return _pw_file_open(&fname, flags, mode, result);
-}
-
-[[nodiscard]] static inline bool _pw_file_open_utf32(char32_t* file_name, int flags, mode_t mode, PwValuePtr result)
-{
-    _PwValue fname = PwStaticString(file_name);
-    return _pw_file_open(&fname, flags, mode, result);
-}
+[[nodiscard]] static inline bool _pw_file_open_ascii(char*     file_name, int flags, mode_t mode, PwValuePtr result) { _PwValue fname = PwStaticString(file_name); return _pw_file_open(&fname, flags, mode, result); }
+[[nodiscard]] static inline bool _pw_file_open_utf8 (char8_t*  file_name, int flags, mode_t mode, PwValuePtr result) { PwValue fname = PW_NULL; if (!pw_create_string(file_name, &fname)) { return false; } return _pw_file_open(&fname, flags, mode, result); }
+[[nodiscard]] static inline bool _pw_file_open_utf32(char32_t* file_name, int flags, mode_t mode, PwValuePtr result) { _PwValue fname = PwStaticStringUtf32(file_name); return _pw_file_open(&fname, flags, mode, result); }
 
 
 [[nodiscard]] bool pw_file_from_fd(int fd, bool take_ownership, PwValuePtr result);

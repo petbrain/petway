@@ -32,33 +32,15 @@ typedef struct {
         PwValuePtr: _pw_create_string_io         \
     )((str), (result))
 
-[[nodiscard]] static inline bool _pw_create_string_io_ascii(char* str, PwValuePtr result)
-{
-    PwValue v = PwStaticString(str);
-    PwStringIOCtorArgs args = { .string = &v };
-    return pw_create2(PwTypeId_StringIO, &args, result);
-}
-
-[[nodiscard]] static inline bool _pw_create_string_io_utf8(char8_t* str, PwValuePtr result)
-{
-    PwValue v = PwStringUtf8(str);
-    PwStringIOCtorArgs args = { .string = &v };
-    return pw_create2(PwTypeId_StringIO, &args, result);
-}
-
-[[nodiscard]] static inline bool _pw_create_string_io_utf32(char32_t* str, PwValuePtr result)
-{
-    PwValue v = PwStaticString(str);
-    PwStringIOCtorArgs args = { .string = &v };
-    return pw_create2(PwTypeId_StringIO, &args, result);
-}
-
 [[nodiscard]] static inline bool _pw_create_string_io(PwValuePtr str, PwValuePtr result)
 {
     PwStringIOCtorArgs args = { .string = str };
     return pw_create2(PwTypeId_StringIO, &args, result);
 }
 
+[[nodiscard]] static inline bool _pw_create_string_io_ascii(char*     str, PwValuePtr result) { _PwValue s = PwStaticString(str); PwStringIOCtorArgs args = { .string = &s }; return pw_create2(PwTypeId_StringIO, &args, result); }
+[[nodiscard]] static inline bool _pw_create_string_io_utf8 (char8_t*  str, PwValuePtr result) { PwValue s = PW_NULL; if (!pw_create_string(str, &s)) { return false; } PwStringIOCtorArgs args = { .string = &s }; return pw_create2(PwTypeId_StringIO, &args, result); }
+[[nodiscard]] static inline bool _pw_create_string_io_utf32(char32_t* str, PwValuePtr result) { _PwValue s = PwStaticStringUtf32(str); PwStringIOCtorArgs args = { .string = &s }; return pw_create2(PwTypeId_StringIO, &args, result); }
 
 
 #ifdef __cplusplus

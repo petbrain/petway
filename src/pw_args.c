@@ -12,7 +12,10 @@ bool pw_parse_kvargs(int argc, char* argv[], PwValuePtr result)
 
     // add argv[0] to the result
     PwValue zero = PwUnsigned(0);
-    PwValue argv0 = PwStringUtf8((char8_t*) argv[0]);
+    PwValue argv0 = PW_NULL;
+    if (!pw_create_string((char8_t*) argv[0], &argv0)) {
+        return false;
+    }
     if (!pw_map_update(result, &zero, &argv0)) {
         return false;
     }

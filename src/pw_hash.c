@@ -77,7 +77,7 @@ void _pw_hash_buffer(PwHashContext* ctx, void* buffer, size_t length)
 
 void _pw_hash_string(PwHashContext* ctx, char* str)
 {
-    for(;;) {
+    for (;;) {
         uint64_t v = 0;
         for (size_t i = 0; i < 8; i++) {
             uint8_t c = *str++;
@@ -94,7 +94,7 @@ void _pw_hash_string(PwHashContext* ctx, char* str)
 
 void _pw_hash_string32(PwHashContext* ctx, char32_t* str)
 {
-    for(;;) {
+    for (;;) {
         uint64_t v = 0;
         for (size_t i = 0; i < 2; i++) {
             uint32_t c = *str++;

@@ -1,4 +1,3 @@
-#include <limits.h>
 #include <string.h>
 
 #include "include/pw.h"
@@ -367,7 +366,7 @@ void _pw_destroy_array(PwTypeId type_id, _PwArray* array, PwValuePtr parent)
     }
     PwTypeId type_id = dest->type_id;
     unsigned num_appended = 0;
-    for(;;) {{
+    for (;;) {{
         PwValue arg = va_arg(ap, _PwValue);
         if (pw_is_status(&arg)) {
             if (pw_is_va_end(&arg)) {
@@ -704,10 +703,19 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
     return _pw_array_join(&sep, array, result);
 }
 
+[[nodiscard]] bool _pw_array_join_ascii(char* separator, PwValuePtr array, PwValuePtr result)
+{
+    PwValue sep = PW_STRING("");
+    if (!pw_string_append(&sep, separator, nullptr)) {
+        return false;
+    }
+    return _pw_array_join(&sep, array, result);
+}
+
 [[nodiscard]] bool _pw_array_join_utf8(char8_t* separator, PwValuePtr array, PwValuePtr result)
 {
     PwValue sep = PW_STRING("");
-    if (!pw_string_append(&sep, separator)) {
+    if (!pw_string_append(&sep, separator, nullptr)) {
         return false;
     }
     return _pw_array_join(&sep, array, result);
@@ -716,7 +724,7 @@ void _pw_array_del(_PwArray* array, unsigned start_index, unsigned end_index, Pw
 [[nodiscard]] bool _pw_array_join_utf32(char32_t*  separator, PwValuePtr array, PwValuePtr result)
 {
     PwValue sep = PW_STRING("");
-    if (!pw_string_append(&sep, separator)) {
+    if (!pw_string_append(&sep, separator, nullptr)) {
         return false;
     }
     return _pw_array_join(&sep, array, result);

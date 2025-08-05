@@ -23,7 +23,7 @@ static inline bool end_of_line(PwValuePtr str, unsigned position)
     bool separator_seen = false;
     unsigned pos = start_pos;
     bool ret = false;
-    for(;;) {
+    for (;;) {
         char32_t chr = pw_char_at(str, pos);
 
         // check separator
