@@ -834,8 +834,7 @@ void _pw_init_file()
             &file_type, "File", PwTypeId_Struct, _PwFile,
             PwInterfaceId_File,   &file_interface,
             PwInterfaceId_Reader, &file_reader_interface,
-            PwInterfaceId_Writer, &file_writer_interface,
-            PwInterfaceId_LineReader, &line_reader_interface
+            PwInterfaceId_Writer, &file_writer_interface
         );
         file_type.hash     = file_hash;
         file_type.deepcopy = file_deepcopy;
