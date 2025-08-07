@@ -1,286 +1,102 @@
 #include "include/pw.h"
 #include "src/string/pw_string_internal.h"
 
-static int streqz_1_1(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *b_start_ptr++;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*a_start_ptr++ != sub_chr) {
-            return PW_NEQ;
-        }
+#define EQUZ(A_CHAR_TYPE, A_CHAR_SIZE, B_CHAR_TYPE, B_CHAR_SIZE)  \
+    static int streqz_##A_CHAR_SIZE##_##B_CHAR_SIZE(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)  \
+    {  \
+        while (a_length--) {  \
+            char32_t b_chr = *(B_CHAR_TYPE*) b_start_ptr;  \
+            if (!b_chr) {  \
+                return PW_EQ_PARTIAL;  \
+            }  \
+            if (*(A_CHAR_TYPE*) a_start_ptr != b_chr) {  \
+                return PW_NEQ;  \
+            }  \
+            a_start_ptr += A_CHAR_SIZE;  \
+            b_start_ptr += B_CHAR_SIZE;  \
+        }  \
+        return (0 == *(B_CHAR_TYPE*) b_start_ptr)? PW_EQ : PW_NEQ;  \
     }
-    return (0 == *b_start_ptr)? PW_EQ : PW_NEQ;
-}
+EQUZ(uint8_t,  1, uint8_t,  1)
+EQUZ(uint8_t,  1, uint16_t, 2)
+EQUZ(uint8_t,  1, char32_t, 4)
+EQUZ(uint16_t, 2, uint8_t,  1)
+EQUZ(uint16_t, 2, uint16_t, 2)
+EQUZ(uint16_t, 2, char32_t, 4)
+EQUZ(char32_t, 4, uint8_t,  1)
+EQUZ(char32_t, 4, uint16_t, 2)
+EQUZ(char32_t, 4, char32_t, 4)
 
-static int streqz_1_2(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *(uint16_t*) b_start_ptr;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*a_start_ptr++ != sub_chr) {
-            return PW_NEQ;
-        }
-        b_start_ptr += 2;
+#define EQUZ_N_3(A_CHAR_TYPE, A_CHAR_SIZE)  \
+    static int streqz_##A_CHAR_SIZE##_3(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)  \
+    {  \
+        while (a_length--) {  \
+            char32_t b_chr = *b_start_ptr++;  \
+            b_chr |= (*b_start_ptr++) << 8;  \
+            b_chr |= (*b_start_ptr++) << 16;  \
+            if (!b_chr) {  \
+                return PW_EQ_PARTIAL;  \
+            }  \
+            if (*(A_CHAR_TYPE*) a_start_ptr != b_chr) {  \
+                return PW_NEQ;  \
+            }  \
+            a_start_ptr += A_CHAR_SIZE;  \
+        }  \
+        if (_pw_unlikely(*b_start_ptr++)) { return false; }  \
+        if (_pw_unlikely(*b_start_ptr++)) { return false; }  \
+        if (_pw_unlikely(*b_start_ptr)) { return false; }  \
+        return PW_EQ;  \
     }
-    return (0 == *(uint16_t*) b_start_ptr)? PW_EQ : PW_NEQ;
-}
+EQUZ_N_3(uint8_t,  1)
+EQUZ_N_3(uint16_t, 2)
+EQUZ_N_3(char32_t, 4)
 
-static int streqz_1_3(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *b_start_ptr++;
-        sub_chr |= (*b_start_ptr++) << 8;
-        sub_chr |= (*b_start_ptr++) << 16;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*a_start_ptr++ != sub_chr) {
-            return PW_NEQ;
-        }
+#define EQUZ_3_N(B_CHAR_TYPE, B_CHAR_SIZE)  \
+    static int streqz_3_##B_CHAR_SIZE(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)  \
+    {  \
+        while (a_length--) {  \
+            char32_t b_chr = *(B_CHAR_TYPE*) b_start_ptr;  \
+            if (!b_chr) {  \
+                return PW_EQ_PARTIAL;  \
+            }  \
+            char32_t a_chr = *a_start_ptr++;  \
+            a_chr |= (*a_start_ptr++) << 8;  \
+            a_chr |= (*a_start_ptr++) << 16;  \
+            if (a_chr != b_chr) {  \
+                return PW_NEQ;  \
+            }  \
+        }  \
+        return (0 == *(B_CHAR_TYPE*) b_start_ptr)? PW_EQ : PW_NEQ;  \
     }
-    if (_pw_unlikely(*b_start_ptr++)) { return false; }
-    if (_pw_unlikely(*b_start_ptr++)) { return false; }
-    if (_pw_unlikely(*b_start_ptr)) { return false; }
-    return PW_EQ;
-}
-
-static int streqz_1_4(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *(char32_t*) b_start_ptr;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*a_start_ptr++ != sub_chr) {
-            return PW_NEQ;
-        }
-        b_start_ptr += 4;
-    }
-    return (0 == *(char32_t*) b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
-
-static int streqz_2_1(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *b_start_ptr++;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*((uint16_t*) a_start_ptr) != sub_chr) {
-            return PW_NEQ;
-        }
-        a_start_ptr += 2;
-    }
-    return (0 == *b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
-static int streqz_2_2(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *(uint16_t*) b_start_ptr;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*((uint16_t*) a_start_ptr) != sub_chr) {
-            return PW_NEQ;
-        }
-        a_start_ptr += 2;
-        b_start_ptr += 2;
-    }
-    return (0 == *(uint16_t*) b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
-static int streqz_2_3(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *b_start_ptr++;
-        sub_chr |= (*b_start_ptr++) << 8;
-        sub_chr |= (*b_start_ptr++) << 16;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*((uint16_t*) a_start_ptr) != sub_chr) {
-            return PW_NEQ;
-        }
-        a_start_ptr += 2;
-    }
-    if (_pw_unlikely(*b_start_ptr++)) { return PW_NEQ; }
-    if (_pw_unlikely(*b_start_ptr++)) { return PW_NEQ; }
-    if (_pw_unlikely(*b_start_ptr)) { return PW_NEQ; }
-    return PW_EQ;
-}
-
-static int streqz_2_4(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *(char32_t*) b_start_ptr;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*((uint16_t*) a_start_ptr) != sub_chr) {
-            return PW_NEQ;
-        }
-        a_start_ptr += 2;
-        b_start_ptr += 4;
-    }
-    return (0 == *(char32_t*) b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
-
-static int streqz_3_1(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *b_start_ptr++;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        char32_t chr = *a_start_ptr++;
-        chr |= (*a_start_ptr++) << 8;
-        chr |= (*a_start_ptr++) << 16;
-        if (chr != *b_start_ptr++) {
-            return PW_NEQ;
-        }
-    }
-    return (0 == *b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
-static int streqz_3_2(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *(uint16_t*) b_start_ptr;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        char32_t chr = *a_start_ptr++;
-        chr |= (*a_start_ptr++) << 8;
-        chr |= (*a_start_ptr++) << 16;
-        if (chr != sub_chr) {
-            return PW_NEQ;
-        }
-        b_start_ptr += 2;
-    }
-    return (0 == *(uint16_t*) b_start_ptr)? PW_EQ : PW_NEQ;
-}
+EQUZ_3_N(uint8_t,  1)
+EQUZ_3_N(uint16_t, 2)
+EQUZ_3_N(char32_t, 4)
 
 static int streqz_3_3(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
 {
     while (a_length--) {
-        char32_t sub_chr = *b_start_ptr++;
-        sub_chr |= (*b_start_ptr++) << 8;
-        sub_chr |= (*b_start_ptr++) << 16;
-        if (!sub_chr) {
+        char32_t b_chr = *b_start_ptr++;
+        b_chr |= (*b_start_ptr++) << 8;
+        b_chr |= (*b_start_ptr++) << 16;
+        if (!b_chr) {
             return PW_EQ_PARTIAL;
         }
-        char32_t chr = *a_start_ptr++;
-        chr |= (*a_start_ptr++) << 8;
-        chr |= (*a_start_ptr++) << 16;
-        if (chr != sub_chr) {
+        char32_t a_chr = *a_start_ptr++;
+        a_chr |= (*a_start_ptr++) << 8;
+        a_chr |= (*a_start_ptr++) << 16;
+        if (a_chr != b_chr) {
             return PW_NEQ;
         }
-        b_start_ptr += 2;
     }
-    b_start_ptr += a_length;
     if (_pw_unlikely(*b_start_ptr++)) { return PW_NEQ; }
     if (_pw_unlikely(*b_start_ptr++)) { return PW_NEQ; }
     if (_pw_unlikely(*b_start_ptr)) { return PW_NEQ; }
     return true;
 }
 
-static int streqz_3_4(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *(char32_t*) b_start_ptr;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        char32_t chr = *a_start_ptr++;
-        chr |= (*a_start_ptr++) << 8;
-        chr |= (*a_start_ptr++) << 16;
-        if (chr != sub_chr) {
-            return PW_NEQ;
-        }
-        b_start_ptr += 4;
-    }
-    return (0 == *(char32_t*) b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
-
-static int streqz_4_1(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *b_start_ptr++;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*((char32_t*) a_start_ptr) != sub_chr) {
-            return PW_NEQ;
-        }
-        a_start_ptr += 4;
-    }
-    return (0 == *b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
-static int streqz_4_2(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *(uint16_t*) b_start_ptr;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*((char32_t*) a_start_ptr) != sub_chr) {
-            return PW_NEQ;
-        }
-        a_start_ptr += 4;
-        b_start_ptr += 2;
-    }
-    return (0 == *(uint16_t*) b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
-static int streqz_4_3(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *b_start_ptr++;
-        sub_chr |= (*b_start_ptr++) << 8;
-        sub_chr |= (*b_start_ptr++) << 16;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*((char32_t*) a_start_ptr) != sub_chr) {
-            return PW_NEQ;
-        }
-        a_start_ptr += 4;
-    }
-    if (_pw_unlikely(*b_start_ptr++)) { return false; }
-    if (_pw_unlikely(*b_start_ptr++)) { return false; }
-    if (_pw_unlikely(*b_start_ptr)) { return false; }
-    return PW_EQ;
-}
-
-static int streqz_4_4(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
-{
-    while (a_length--) {
-        char32_t sub_chr = *(char32_t*) b_start_ptr;
-        if (!sub_chr) {
-            return PW_EQ_PARTIAL;
-        }
-        if (*((char32_t*) a_start_ptr) != sub_chr) {
-            return PW_NEQ;
-        }
-        a_start_ptr += 4;
-        b_start_ptr += 4;
-    }
-    return (0 == *(char32_t*) b_start_ptr)? PW_EQ : PW_NEQ;
-}
-
 // Comparison with 0-terminated UTF-8 string.
 
-#define CMPZ_UTF8(CHAR_TYPE, CHAR_SIZE)  \
+#define EQUZ_UTF8(CHAR_TYPE, CHAR_SIZE)  \
     static int streqz_##CHAR_SIZE##_0(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)  \
     {  \
         while(a_length--) {  \
@@ -295,9 +111,9 @@ static int streqz_4_4(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_
         }  \
         return (0 == *b_start_ptr)? PW_EQ : PW_NEQ;  \
     }
-CMPZ_UTF8(uint8_t,  1)
-CMPZ_UTF8(uint16_t, 2)
-CMPZ_UTF8(char32_t, 4)
+EQUZ_UTF8(uint8_t,  1)
+EQUZ_UTF8(uint16_t, 2)
+EQUZ_UTF8(char32_t, 4)
 
 static int streqz_3_0(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_start_ptr)
 {
