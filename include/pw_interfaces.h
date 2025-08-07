@@ -24,6 +24,7 @@ typedef struct __PwInterface _PwInterface;
 #define PwInterfaceId_Reader        1
 #define PwInterfaceId_Writer        2
 #define PwInterfaceId_LineReader    3  // iterator interface
+#define PwInterfaceId_Append        4
 
 /****************************************************************
  * RandomAccess interface
@@ -106,6 +107,16 @@ typedef struct {
      */
 
 } PwInterface_LineReader;
+
+
+/****************************************************************
+ * Append interface
+ */
+
+typedef struct {
+    [[ gnu::warn_unused_result ]] bool (*append)(PwValuePtr self, PwValuePtr value);
+    [[ gnu::warn_unused_result ]] bool (*append_string_data)(PwValuePtr self, uint8_t* start_ptr, uint8_t* end_ptr, uint8_t char_size);
+} PwInterface_Append;
 
 
 /*
@@ -211,6 +222,11 @@ static inline bool _pw_has_interface(PwTypeId type_id, unsigned interface_id)
 [[nodiscard]] static inline bool pw_write(PwValuePtr writer, void* data, unsigned size, unsigned* bytes_written)
 {
     return pw_interface(writer->type_id, Writer)->write(writer, data, size, bytes_written);
+}
+
+[[nodiscard]] static inline bool pw_append(PwValuePtr container, PwValuePtr value)
+{
+    return pw_interface(container->type_id, Append)->append(container, value);
 }
 
 #ifdef __cplusplus

@@ -8,18 +8,12 @@ extern "C" {
 
 [[nodiscard]] bool pw_to_json(PwValuePtr value, unsigned indent, PwValuePtr result);
 /*
- * Convert `value` to JSON string.
+ * Convert `value` to JSON.
+ *
+ * If `result` is Null, a string is created for it.
+ * Otherwise, it should provide Append interface.
  *
  * If `indent` is nonzero, the result is formatted with indentation.
- */
-
-[[nodiscard]] bool pw_to_json_file(PwValuePtr value, unsigned indent, PwValuePtr file);
-/*
- * Convert `value` to JSON and write to `file` in UTF-8 encoding.
- *
- * If `indent` is nonzero, the result is formatted with indentation.
- *
- * Return status.
  */
 
 #ifdef __cplusplus

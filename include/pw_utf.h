@@ -43,10 +43,10 @@ void pw_substr_to_utf8_buf(PwValuePtr str, unsigned start_pos, unsigned end_pos,
  * Encode multibyte chars to UTF-8.
  */
 
-char* pw_char32_to_utf8(char32_t codepoint, char* buffer);
+unsigned pw_char32_to_utf8(char32_t codepoint, char* buffer);
 /*
  * Write up to 4 characters to buffer.
- * Return pointer to the next position in buffer.
+ * Return number of characters written.
  */
 
 void _pw_putchar32_utf8(FILE* fp, char32_t codepoint);

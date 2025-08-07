@@ -102,6 +102,8 @@ unsigned _pw_calc_string_data_size(uint8_t char_size, unsigned desired_capacity,
         new_char_size = char_size;
     }
 
+    unsigned old_capacity = 0;
+
     if (str->embedded) {
         unsigned new_length = str->embedded_length + increment;
         if (_pw_likely(new_length <= embedded_capacity[new_char_size])) {
@@ -119,28 +121,33 @@ unsigned _pw_calc_string_data_size(uint8_t char_size, unsigned desired_capacity,
             return true;
         }
         // increased capacity is beyond embedded capacity; go copy
+        // !! not necessary: old_capacity = embedded_capacity[char_size];
 
-    } else if (str->allocated && new_char_size == char_size) {
+    } else if (str->allocated) {
 
-        unsigned new_capacity = str->length + increment;
+        old_capacity = str->string_data->capacity;
 
-        if (_pw_likely(new_capacity <= str->string_data->capacity)) {
-            // no need to expand
-            return true;
-        }
-        if (_pw_likely(str->string_data->refcount == 1)) {
+        if (new_char_size == char_size) {
+            unsigned new_capacity = str->length + increment;
 
-            // expand string in-place
-
-            if (_pw_unlikely(increment > _max_capacity[char_size] - str->length)) {
-                pw_set_status(PwStatus(PW_ERROR_STRING_TOO_LONG));
-                return false;
+            if (_pw_likely(new_capacity <= str->string_data->capacity)) {
+                // no need to expand
+                return true;
             }
-            unsigned orig_memsize = _pw_allocated_string_data_size(str);
-            unsigned new_memsize = _pw_calc_string_data_size(char_size, new_capacity, &str->string_data->capacity);
+            if (_pw_likely(str->string_data->refcount == 1)) {
 
-            // reallocate data
-            return _pw_realloc(str->type_id, (void**) &str->string_data, orig_memsize, new_memsize, false);
+                // expand string in-place
+
+                if (_pw_unlikely(increment > _max_capacity[char_size] - str->length)) {
+                    pw_set_status(PwStatus(PW_ERROR_STRING_TOO_LONG));
+                    return false;
+                }
+                unsigned orig_memsize = _pw_allocated_string_data_size(str);
+                unsigned new_memsize = _pw_calc_string_data_size(char_size, new_capacity, &str->string_data->capacity);
+
+                // reallocate data
+                return _pw_realloc(str->type_id, (void**) &str->string_data, orig_memsize, new_memsize, false);
+            }
         }
     }
 
@@ -148,6 +155,12 @@ unsigned _pw_calc_string_data_size(uint8_t char_size, unsigned desired_capacity,
 
     unsigned length = pw_strlen(str);
     unsigned new_capacity = length + increment;
+
+    // preserve memory size
+    if (new_capacity * new_char_size < old_capacity * char_size) {
+        new_capacity = old_capacity * char_size / new_char_size;
+        pw_assert(new_capacity >= length + increment);
+    }
 
     if (_pw_unlikely(increment > _max_capacity[new_char_size] - length)) {
         pw_set_status(PwStatus(PW_ERROR_STRING_TOO_LONG));

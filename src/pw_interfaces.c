@@ -45,12 +45,13 @@ void _pw_init_interfaces()
         pw_panic("Cannot create arena\n");
     }
 
-    // register built-ion interfaces
+    // register built-in interfaces
 
     pw_assert(PwInterfaceId_RandomAccess == pw_register_interface("RandomAccess", PwInterface_RandomAccess));
     pw_assert(PwInterfaceId_Reader       == pw_register_interface("Reader",       PwInterface_Reader));
     pw_assert(PwInterfaceId_Writer       == pw_register_interface("Writer",       PwInterface_Writer));
     pw_assert(PwInterfaceId_LineReader   == pw_register_interface("LineReader",   PwInterface_LineReader));
+    pw_assert(PwInterfaceId_Append       == pw_register_interface("Append",       PwInterface_Append));
 }
 
 unsigned _pw_register_interface(char* name, unsigned num_methods)

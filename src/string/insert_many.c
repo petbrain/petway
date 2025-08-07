@@ -20,8 +20,7 @@
     }
     // XXX optimize
     for (unsigned i = 0; i < n; i++) {
-        _pw_put_char(insertion_ptr, chr, char_size);
-        insertion_ptr += char_size;
+        insertion_ptr += _pw_put_char(insertion_ptr, chr, char_size);
     }
     return true;
 }

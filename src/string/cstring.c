@@ -16,7 +16,7 @@ static void _cp_to_utf8_uint8_t(uint8_t* self_ptr, char* dest, unsigned length)
     {  \
         type_name_self* src_ptr = (type_name_self*) self_ptr;  \
         while (length--) {  \
-            dest = pw_char32_to_utf8(*src_ptr++, dest); \
+            dest += pw_char32_to_utf8(*src_ptr++, dest); \
         }  \
         *dest = 0;  \
     }
@@ -32,7 +32,7 @@ static void _cp_to_utf8_uint24_t(uint8_t* self_ptr, char* dest, unsigned length)
         char32_t c = *self_ptr++;
         c |= (*self_ptr++) << 8;
         c |= (*self_ptr++) << 16;
-        dest = pw_char32_to_utf8(c, dest);
+        dest += pw_char32_to_utf8(c, dest);
     }
     *dest = 0;
 }

@@ -134,14 +134,14 @@ static inline char32_t _pw_get_char_reverse(uint8_t** ptr, uint8_t char_size)
     _pw_panic_bad_char_size(char_size);
 }
 
-static inline uint8_t* _pw_put_char(uint8_t* ptr, char32_t chr, uint8_t char_size)
+static inline unsigned _pw_put_char(uint8_t* ptr, char32_t chr, uint8_t char_size)
 {
     if (_pw_likely(char_size == 1)) {
         *ptr = (uint8_t) chr;
     } else if (_pw_likely(char_size == 2)) {
         *((uint16_t*) ptr) = (uint16_t) chr;
     } else if (_pw_likely(char_size == 0)) {
-        return (uint8_t*) pw_char32_to_utf8(chr, (char*) ptr);
+        return pw_char32_to_utf8(chr, (char*) ptr);
     } else if (_pw_likely(char_size == 4)) {
         *((char32_t*) ptr) = chr;
     } else if (_pw_likely(char_size == 3)) {
@@ -151,7 +151,7 @@ static inline uint8_t* _pw_put_char(uint8_t* ptr, char32_t chr, uint8_t char_siz
     } else {
         _pw_panic_bad_char_size(char_size);
     }
-    return ptr + char_size;
+    return char_size;
 }
 
 char32_t pw_char_at(PwValuePtr str, unsigned position);

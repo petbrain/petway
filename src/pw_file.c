@@ -293,6 +293,9 @@ static PwInterface_Reader file_reader_interface = {
         } while (n < 0 && errno == EINTR);
 
         if (n < 0) {
+            if (bytes_written) {
+                *bytes_written = written;
+            }
             pw_set_status(PwErrno(errno));
             return false;
         }
@@ -571,7 +574,7 @@ static PwInterface_Reader bfile_reader_interface = {
 
 
 /****************************************************************
- * Writer interface for File
+ * Writer interface for BufferedFile
  */
 
 [[nodiscard]] static bool bfile_write(PwValuePtr self, void* data, unsigned size, unsigned* bytes_written)
@@ -640,7 +643,7 @@ static PwInterface_Writer bfile_writer_interface = {
 
 
 /****************************************************************
- * LineReader interface methods
+ * LineReader interface methods for buffered file
  */
 
 [[nodiscard]] static bool start_read_lines(PwValuePtr self)
@@ -812,6 +815,110 @@ static PwInterface_LineReader line_reader_interface = {
 
 
 /****************************************************************
+ * Append interface methods for unbuffered file
+ */
+
+static bool file_append_string_data(PwValuePtr self, uint8_t* start_ptr, uint8_t* end_ptr, uint8_t char_size)
+{
+    if (start_ptr >= end_ptr) {
+        return true;
+    }
+    if (char_size < 2) {
+        // write ASCII and UTF-8 directly to file
+        return file_write(self, start_ptr, end_ptr - start_ptr, nullptr);
+    }
+
+    // convert wide chars to UTF-8
+
+    uint8_t buffer[1024];
+    unsigned n = 0;
+
+    while (start_ptr < end_ptr) {
+        char32_t codepoint = _pw_get_char(start_ptr, char_size);
+        n += pw_char32_to_utf8(codepoint, (char*) &buffer[n]);
+        if (n > sizeof(buffer) - 4) {
+            if (!file_write(self, buffer, n, nullptr)) {
+                return false;
+            }
+            n = 0;
+        }
+    }
+    if (n) {
+        if (!file_write(self, buffer, n, nullptr)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool file_append(PwValuePtr self, PwValuePtr value)
+{
+    pw_expect(String, value);
+
+    uint8_t* end_ptr;
+    uint8_t* start_ptr = _pw_string_start_end(value, &end_ptr);
+    return file_append_string_data(self, start_ptr, end_ptr, value->char_size);
+}
+
+static PwInterface_Append file_append_interface = {
+    .append = file_append,
+    .append_string_data = file_append_string_data
+
+};
+
+/****************************************************************
+ * Append interface methods for buffered file
+ */
+
+static bool bfile_append_string_data(PwValuePtr self, uint8_t* start_ptr, uint8_t* end_ptr, uint8_t char_size)
+{
+    if (start_ptr >= end_ptr) {
+        return true;
+    }
+
+    if (char_size < 2) {
+        // write ASCII and UTF-8 directly to file
+        return bfile_write(self, start_ptr, end_ptr - start_ptr, nullptr);
+    }
+
+    // convert wide chars to UTF-8
+
+    _PwBufferedFile* f = get_bfile_data_ptr(self);
+
+    if (f->write_buffer_size == 0) {
+        // invoke unbuffered version
+        return file_append_string_data(self, start_ptr, end_ptr, char_size);
+    }
+
+    while (start_ptr < end_ptr) {
+        unsigned remaining = f->write_buffer_size - f->write_position;
+        if (remaining < 4) {
+            if (!bfile_flush(self)) {
+                return false;
+            }
+        }
+        char32_t codepoint = _pw_get_char(start_ptr, char_size);
+        start_ptr += char_size;
+        f->write_position += pw_char32_to_utf8(codepoint, (char*) &f->write_buffer[f->write_position]);
+    }
+    return true;
+}
+
+static bool bfile_append(PwValuePtr self, PwValuePtr value)
+{
+    pw_expect(String, value);
+
+    uint8_t* end_ptr;
+    uint8_t* start_ptr = _pw_string_start_end(value, &end_ptr);
+    return bfile_append_string_data(self, start_ptr, end_ptr, value->char_size);
+}
+
+static PwInterface_Append bfile_append_interface = {
+    .append = bfile_append,
+    .append_string_data = bfile_append_string_data
+};
+
+/****************************************************************
  * Initialization
  */
 
@@ -834,7 +941,8 @@ void _pw_init_file()
             &file_type, "File", PwTypeId_Struct, _PwFile,
             PwInterfaceId_File,   &file_interface,
             PwInterfaceId_Reader, &file_reader_interface,
-            PwInterfaceId_Writer, &file_writer_interface
+            PwInterfaceId_Writer, &file_writer_interface,
+            PwInterfaceId_Append, &file_append_interface
         );
         file_type.hash     = file_hash;
         file_type.deepcopy = file_deepcopy;
@@ -849,7 +957,8 @@ void _pw_init_file()
             PwInterfaceId_BufferedFile, &bfile_buffered_file_interface,
             PwInterfaceId_Reader,       &bfile_reader_interface,
             PwInterfaceId_Writer,       &bfile_writer_interface,
-            PwInterfaceId_LineReader,   &line_reader_interface
+            PwInterfaceId_LineReader,   &line_reader_interface,
+            PwInterfaceId_Append,       &bfile_append_interface
         );
         buffered_file_type.dump = bfile_dump;
         buffered_file_type.init = bfile_init;

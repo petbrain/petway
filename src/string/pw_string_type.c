@@ -161,20 +161,48 @@ void _pw_string_dump_data(FILE* fp, PwValuePtr str, int indent)
 
 
 /****************************************************************
+ * Append interface
+ */
+
+static bool append_string_data(PwValuePtr self, uint8_t* start_ptr, uint8_t* end_ptr, uint8_t char_size)
+{
+    unsigned length = end_ptr - start_ptr;
+    if (!length) {
+        return true;
+    }
+    if (!_pw_expand_string(self, length, self->char_size)) {
+        return false;
+    }
+    unsigned pos = _pw_string_inc_length(self, length);
+
+    StrAppend fn_append = _pw_str_append_variants[self->char_size][char_size];
+    return fn_append(self, pos, start_ptr, end_ptr);
+}
+
+static PwInterface_Append append_interface = {
+    .append = _pw_string_append,
+    .append_string_data = append_string_data
+};
+
+/****************************************************************
  * String type
  */
 
 //static PwInterface_RandomAccess random_access_interface;
 
 
-/*
 static _PwInterface string_interfaces[] = {
+    {
+        .interface_id      = PwInterfaceId_Append,
+        .interface_methods = (void**) &append_interface
+    }
+    /*
     {
         .interface_id      = PwInterfaceId_RandomAccess,
         .interface_methods = (void**) &random_access_interface
     }
+    */
 };
-*/
 
 PwType _pw_string_type = {
     .id             = PwTypeId_String,
@@ -190,8 +218,8 @@ PwType _pw_string_type = {
     .to_string      = string_deepcopy,  // yes, simply make a copy
     .is_true        = string_is_true,
     .equal_sametype = string_equal_sametype,
-    .equal          = string_equal
+    .equal          = string_equal,
 
-    //.num_interfaces = PW_LENGTH(string_interfaces),
-    //.interfaces     = string_interfaces
+    .num_interfaces = PW_LENGTH(string_interfaces),
+    .interfaces     = string_interfaces
 };

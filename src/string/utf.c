@@ -201,7 +201,7 @@ bad_utf8:
 #   undef APPEND_NEXT
 }
 
-char* pw_char32_to_utf8(char32_t codepoint, char* buffer)
+unsigned pw_char32_to_utf8(char32_t codepoint, char* buffer)
 {
     /*
      * U+0000 - U+007F      0xxxxxxx
@@ -211,24 +211,24 @@ char* pw_char32_to_utf8(char32_t codepoint, char* buffer)
      */
     if (codepoint < 0x80) {
         *buffer++ = (char) codepoint;
-        return buffer;
+        return 1;
     }
     if (codepoint < 0b1'00000'000000) {
         *buffer++ = (char) (0xC0 | (codepoint >> 6));
         *buffer++ = (char) (0x80 | (codepoint & 0x3F));
-        return buffer;
+        return 2;
     }
     if (codepoint < 0b1'0000'000000'000000) {
         *buffer++ = (char) (0xE0 | (codepoint >> 12));
         *buffer++ = (char) (0x80 | ((codepoint >> 6) & 0x3F));
         *buffer++ = (char) (0x80 | (codepoint & 0x3F));
-        return buffer;
+        return 3;
     }
     *buffer++ = (char) (0xF0 | ((codepoint >> 18) & 0x07));
     *buffer++ = (char) (0x80 | ((codepoint >> 12) & 0x3F));
     *buffer++ = (char) (0x80 | ((codepoint >> 6) & 0x3F));
     *buffer++ = (char) (0x80 | (codepoint & 0x3F));
-    return buffer;
+    return 4;
 }
 
 unsigned utf8_strlen(char8_t* str)
@@ -327,8 +327,8 @@ void _pw_putchar32_utf8(FILE* fp, char32_t codepoint)
 {
     char buffer[5];
     char* start = buffer;
-    char* end = pw_char32_to_utf8(codepoint, buffer);
-    while (start < end) {
+    unsigned n = pw_char32_to_utf8(codepoint, buffer);
+    while (n--) {
         fputc(*start++, fp);
     }
 }

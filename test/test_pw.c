@@ -511,7 +511,6 @@ void test_string()
             panic();
         }
         TEST(pw_strlen(&v) == 6);
-        TEST(v.embedded);
         TEST(v.char_size == 2);
         TEST(pw_equal(&v, u8"สวัสดี"));
         //pw_dump(stderr, &v);
