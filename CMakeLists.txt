@@ -44,6 +44,7 @@ add_library(petway STATIC
     src/string/create.c
     src/string/cstring.c
     src/string/equal_z.c
+    src/string/equal_zi.c
     src/string/erase.c
     src/string/hash.c
     src/string/insert_many.c
@@ -59,13 +60,16 @@ add_library(petway STATIC
     src/string/strcat_va.c
     src/string/strchr.c
     src/string/strchr2.c
+    src/string/strchri.c
     src/string/strrchr2.c
     src/string/strstr.c
     src/string/strstri.c
     src/string/strstrz.c
     src/string/substr.c
     src/string/substreq.c
+    src/string/substreqi.c
     src/string/substreqz.c
+    src/string/substreqzi.c
     src/string/trim.c
     src/string/truncate.c
     src/string/upper_lower.c

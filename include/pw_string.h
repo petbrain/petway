@@ -207,6 +207,15 @@ static inline unsigned pw_strlen(PwValuePtr str)
  * Same as `pw_strchr` and `pw_strrchr`, but also return maximal char size.
  */
 
+[[ nodiscard]] bool pw_strchri(PwValuePtr str, char32_t chr, unsigned start_pos, unsigned* result);
+/*
+ * Find first case-insensitive occurence of `chr` in `str` starting from `start_pos`.
+ *
+ * Return true if character is found and write its position to `result`.
+ * `result` can be nullptr if position is not needed and the function
+ * is called just to check if `chr` is in `str`.
+ */
+
 [[nodiscard]] bool pw_string_ltrim(PwValuePtr str);
 [[nodiscard]] bool pw_string_rtrim(PwValuePtr str);
 [[nodiscard]] bool pw_string_trim(PwValuePtr str);
@@ -371,6 +380,30 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
 }
 
 
+#define pw_substring_eqi(a, start_pos, end_pos, b) _Generic((b), \
+             char*: _pw_substring_eqi_ascii,  \
+          char8_t*: _pw_substring_eqi_utf8,   \
+         char32_t*: _pw_substring_eqi_utf32,  \
+        PwValuePtr: _pw_substring_eqi         \
+    )((a), (start_pos), (end_pos), (b))
+
+[[nodiscard]] bool _pw_substring_eqi  (PwValuePtr a, unsigned start_pos, unsigned end_pos, PwValuePtr b);
+[[nodiscard]] bool _pw_substring_eqi_z(PwValuePtr a, unsigned start_pos, unsigned end_pos, void* b, uint8_t b_char_size);
+
+[[nodiscard]] static inline bool _pw_substring_eqi_ascii(PwValuePtr a, unsigned start_pos, unsigned end_pos, char* b)
+{
+    return _pw_substring_eqi_z(a, start_pos, end_pos, b, 1);
+}
+[[nodiscard]] static inline bool _pw_substring_eqi_utf8 (PwValuePtr a, unsigned start_pos, unsigned end_pos, char8_t* b)
+{
+    return _pw_substring_eqi_z(a, start_pos, end_pos, b, 0);
+}
+[[nodiscard]] static inline bool _pw_substring_eqi_utf32(PwValuePtr a, unsigned start_pos, unsigned end_pos, char32_t* b)
+{
+    return _pw_substring_eqi_z(a, start_pos, end_pos, b, 4);
+}
+
+
 #define pw_startswith(str, prefix) _Generic((prefix), \
                int: _pw_startswith_c32,    \
           char32_t: _pw_startswith_c32,    \
@@ -398,6 +431,33 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
 }
 
 
+#define pw_startswithi(str, prefix) _Generic((prefix), \
+               int: _pw_startswithi_c32,    \
+          char32_t: _pw_startswithi_c32,    \
+             char*: _pw_startswithi_ascii,  \
+          char8_t*: _pw_startswithi_utf8,   \
+         char32_t*: _pw_startswithi_utf32,  \
+        PwValuePtr: _pw_startswithi         \
+    )((str), (prefix))
+
+[[nodiscard]] bool _pw_startswithi_c32(PwValuePtr str, char32_t   prefix);
+[[nodiscard]] bool _pw_startswithi    (PwValuePtr str, PwValuePtr prefix);
+[[nodiscard]] bool _pw_startswithi_z  (PwValuePtr str, void*      prefix, uint8_t prefix_char_size);
+
+[[nodiscard]] static inline bool _pw_startswithi_ascii(PwValuePtr str, char* prefix)
+{
+    return _pw_startswithi_z(str, prefix, 1);
+}
+[[nodiscard]] static inline bool _pw_startswithi_utf8(PwValuePtr str, char8_t* prefix)
+{
+    return _pw_startswithi_z(str, prefix, 0);
+}
+[[nodiscard]] static inline bool _pw_startswithi_utf32(PwValuePtr str, char32_t* prefix)
+{
+    return _pw_startswithi_z(str, prefix, 4);
+}
+
+
 #define pw_endswith(str, suffix) _Generic((suffix), \
                int: _pw_endswith_c32,    \
           char32_t: _pw_endswith_c32,    \
@@ -422,6 +482,33 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
 [[nodiscard]] static inline bool _pw_endswith_utf32(PwValuePtr str, char32_t* suffix)
 {
     return _pw_endswith_z(str, suffix, 4);
+}
+
+
+#define pw_endswithi(str, suffix) _Generic((suffix), \
+               int: _pw_endswithi_c32,    \
+          char32_t: _pw_endswithi_c32,    \
+             char*: _pw_endswithi_ascii,  \
+          char8_t*: _pw_endswithi_utf8,   \
+         char32_t*: _pw_endswithi_utf32,  \
+        PwValuePtr: _pw_endswithi         \
+    )((str), (suffix))
+
+[[nodiscard]] bool _pw_endswithi_c32(PwValuePtr str, char32_t   suffix);
+[[nodiscard]] bool _pw_endswithi    (PwValuePtr str, PwValuePtr suffix);
+[[nodiscard]] bool _pw_endswithi_z  (PwValuePtr str, void*      suffix, uint8_t suffix_char_size);
+
+[[nodiscard]] static inline bool _pw_endswithi_ascii(PwValuePtr str, char* suffix)
+{
+    return _pw_endswithi_z(str, suffix, 1);
+}
+[[nodiscard]] static inline bool _pw_endswithi_utf8(PwValuePtr str, char8_t* suffix)
+{
+    return _pw_endswithi_z(str, suffix, 0);
+}
+[[nodiscard]] static inline bool _pw_endswithi_utf32(PwValuePtr str, char32_t* suffix)
+{
+    return _pw_endswithi_z(str, suffix, 4);
 }
 
 
@@ -548,117 +635,6 @@ bool pw_string_is_ascii_digit(PwValuePtr str);
 [[nodiscard]] bool _pw_string_rsplit_substri_ascii(PwValuePtr str, char*      splitter, unsigned maxsplit, PwValuePtr result);
 [[nodiscard]] bool _pw_string_rsplit_substri_utf8 (PwValuePtr str, char8_t*   splitter, unsigned maxsplit, PwValuePtr result);
 [[nodiscard]] bool _pw_string_rsplit_substri_utf32(PwValuePtr str, char32_t*  splitter, unsigned maxsplit, PwValuePtr result);
-
-
-/****************************************************************
- * Low level string iterator.
- *
- * The algorithm is implemented as macros and local variables
- * instead of functions and structures to give the compiler
- * more optimization freedom.
- *
- * How to use:
- *
- * PwStringPtr str = whatever;
- * PW_STRING_ITER(src, str)
- * while (!PW_STRING_ITER_DONE(src)) {
- *     char32_t chr = PW_STRING_ITER_NEXT(src);
- *     // ...
- * }
- */
-
-#define PW_STRING_ITER_DONE(name)  \
-    (_char_ptr_##name == _end_ptr_##name)
-
-#define PW_STRING_ITER_GETCHAR(name)  \
-    _pw_get_char(_char_ptr_##name, _char_size_##name)
-
-#define PW_STRING_ITER_PUTCHAR(name, chr)  \
-    _pw_put_char(_char_ptr_##name, (chr), _char_size_##name)
-
-#define PW_STRING_ITER_CHARPTR(name)  \
-    _char_ptr_##name
-
-#define PW_STRING_ITER_ENDPTR(name)  \
-    _end_ptr_##name
-
-#define PW_STRING_ITER_CHAR_SIZE(name)  \
-    _char_size_##name
-
-#define PW_STRING_ITER_INC(name);  \
-    do {  \
-        _char_ptr_##name += _char_size_##name;  \
-        if (_pw_unlikely(_char_ptr_##name > _end_ptr_##name)) {  \
-            fprintf(stderr, "PW_STRING_ITER_NEXT %s:%d char_ptr went above end_ptr\n", __FILE__, __LINE__);  \
-            _char_ptr_##name = _end_ptr_##name;  \
-        }  \
-    } while (false)
-
-#define PW_STRING_ITER_DEC(name);  \
-        _char_ptr_##name -= _char_size_##name;  \
-        if (_pw_unlikely(_char_ptr_##name < _end_ptr_##name)) {  \
-            fprintf(stderr, "PW_STRING_ITER_PREV %s:%d char_ptr went below end_ptr\n", __FILE__, __LINE__);  \
-            _char_ptr_##name = _end_ptr_##name;  \
-        }  \
-
-#define PW_STRING_ITER_NEXT(name)  \
-    __extension__ \
-    ({  \
-        char32_t chr = PW_STRING_ITER_GETCHAR(name);  \
-        PW_STRING_ITER_INC(name);  \
-        chr;  \
-    })
-
-#define PW_STRING_ITER_PREV(name)  \
-    __extension__ \
-    ({  \
-        PW_STRING_ITER_DEC(name);  \
-        PW_STRING_ITER_GETCHAR(name);  \
-    })
-
-#define PW_STRING_ITER_RESET(name, s)  \
-    do {  \
-        _char_size_##name = (s)->char_size;  \
-        _char_ptr_##name = _pw_string_start_end((s), &_end_ptr_##name);  \
-    } while (false)
-
-#define PW_STRING_ITER(name, s)  \
-    /* Init forward string iterator */  \
-    uint8_t _char_size_##name;  \
-    uint8_t* _char_ptr_##name;  \
-    uint8_t* _end_ptr_##name;  \
-    PW_STRING_ITER_RESET(name, (s))
-
-#define PW_STRING_ITER_RESET_FROM(name, s, start_index)  \
-    do {  \
-        _char_size_##name = (s)->char_size;  \
-        _char_ptr_##name = _pw_string_start_end((s), &_end_ptr_##name);  \
-        _char_ptr_##name += (start_index) * _char_size_##name;  \
-        if (_char_ptr_##name > _end_ptr_##name) {  \
-            /* start_index too big */  \
-            _char_ptr_##name = _end_ptr_##name;  \
-        }  \
-    } while (false)
-
-#define PW_STRING_ITER_FROM(name, s, start_index)  \
-    /* Init forward string iterator from start_index */  \
-    uint8_t _char_size_##name;  \
-    uint8_t* _char_ptr_##name;  \
-    uint8_t* _end_ptr_##name;  \
-    PW_STRING_ITER_RESET_FROM(name, (s), (start_index))
-
-#define PW_STRING_ITER_RESET_REVERSE(name, s)  \
-    do {  \
-        _char_size_##name = (s)->char_size;  \
-        _end_ptr_##name = _pw_string_start_end((s), &_char_ptr_##name);  \
-    } while (false)
-
-#define PW_STRING_ITER_REVERSE(name, s)  \
-    /* Init reverse string iterator */  \
-    uint8_t _char_size_##name = (s)->char_size;  \
-    uint8_t* _char_ptr_##name;  \
-    uint8_t* _end_ptr_##name; \
-    PW_STRING_ITER_RESET_REVERSE(name, (s));
 
 
 /****************************************************************

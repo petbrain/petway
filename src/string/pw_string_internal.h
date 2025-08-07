@@ -226,6 +226,7 @@ extern StrAppend _pw_str_append_variants[5][5];  // [dest_char_size][src_char_si
 typedef uint8_t* (*StrChr)(uint8_t* start_ptr, uint8_t* end_ptr, char32_t codepoint);
 
 extern StrChr _pw_strchr_variants[5];
+extern StrChr _pw_strchri_variants[5];
 
 /****************************************************************
  * strchr2 variants
@@ -260,6 +261,7 @@ typedef int (*StrEqualZ)(uint8_t* a_start_ptr, unsigned a_length, uint8_t* b_sta
 #define PW_EQ_PARTIAL  2  // a == b, but a is longer than b
 
 extern StrEqualZ _pw_str_equalz_variants[5][5];  // [a_char_size][b_char_size]
+extern StrEqualZ _pw_str_equalzi_variants[5][5];
 
 /****************************************************************
  * substreq variants
@@ -270,6 +272,7 @@ extern StrEqualZ _pw_str_equalz_variants[5][5];  // [a_char_size][b_char_size]
 typedef bool (*SubstrEq)(uint8_t* str_start_ptr, uint8_t* substr_start_ptr, uint8_t* substr_end_ptr);
 
 extern SubstrEq _pw_substreq_variants[5][5];  // [str_char_size][substr_char_size]
+extern SubstrEq _pw_substreqi_variants[5][5];
 
 
 /****************************************************************
