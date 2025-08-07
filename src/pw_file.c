@@ -342,7 +342,7 @@ typedef struct {
 } _PwBufferedFile;
 
 // forward declaration
-static void stop_read_lines(PwValuePtr self);
+static void bfile_stop_read_lines(PwValuePtr self);
 
 #define get_bfile_data_ptr(value)  ((_PwBufferedFile*) _pw_get_data_ptr((value), PwTypeId_BufferedFile))
 
@@ -433,16 +433,17 @@ unsigned PwInterfaceId_BufferedFile = 0;
     }
 
     unsigned bytes_written;
-    if (!file_write(self, f->write_buffer, f->write_position, &bytes_written)) {
+    if (file_write(self, f->write_buffer, f->write_position, &bytes_written)) {
+        // success, all data is written
         f->write_position = 0;
-        return false;
+        return true;
     }
     f->write_position -= bytes_written;
     if (f->write_position) {
         // move unwritten data to the beginning of `data`
         memmove(f->write_buffer, f->write_buffer + bytes_written, f->write_position);
     }
-    return true;
+    return false;
 }
 
 static PwInterface_BufferedFile bfile_buffered_file_interface = {
@@ -465,13 +466,9 @@ static void reset_bfile_data(PwValuePtr self)
     pw_destroy(&f->pushback);
 }
 
-// forward declaration
-static void stop_read_lines(PwValuePtr self);
-
-
 [[nodiscard]] static bool bfile_close(PwValuePtr self)
 {
-    stop_read_lines(self);
+    bfile_stop_read_lines(self);
     bool flush_result = bfile_flush(self);
     reset_bfile_data(self);
     return file_close(self) && flush_result;  // XXX if both flush and close are failed, flush status is lost
@@ -646,7 +643,7 @@ static PwInterface_Writer bfile_writer_interface = {
  * LineReader interface methods for buffered file
  */
 
-[[nodiscard]] static bool start_read_lines(PwValuePtr self)
+[[nodiscard]] static bool bfile_start_read_lines(PwValuePtr self)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
@@ -662,7 +659,7 @@ static PwInterface_Writer bfile_writer_interface = {
     return true;
 }
 
-[[nodiscard]] static bool read_line_inplace(PwValuePtr self, PwValuePtr line)
+[[nodiscard]] static bool bfile_read_line_inplace(PwValuePtr self, PwValuePtr line)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
@@ -768,17 +765,17 @@ static PwInterface_Writer bfile_writer_interface = {
     } while(true);
 }
 
-[[nodiscard]] static bool read_line(PwValuePtr self, PwValuePtr result)
+[[nodiscard]] static bool bfile_read_line(PwValuePtr self, PwValuePtr result)
 {
     PwValue line = PW_STRING("");
-    if (!read_line_inplace(self, &line)) {
+    if (!bfile_read_line_inplace(self, &line)) {
         return false;
     }
     pw_move(&line, result);
     return true;
 }
 
-[[nodiscard]] static bool unread_line(PwValuePtr self, PwValuePtr line)
+[[nodiscard]] static bool bfile_unread_line(PwValuePtr self, PwValuePtr line)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
@@ -791,12 +788,12 @@ static PwInterface_Writer bfile_writer_interface = {
     }
 }
 
-[[nodiscard]] static unsigned get_line_number(PwValuePtr self)
+[[nodiscard]] static unsigned bfile_get_line_number(PwValuePtr self)
 {
     return get_bfile_data_ptr(self)->line_number;
 }
 
-static void stop_read_lines(PwValuePtr self)
+static void bfile_stop_read_lines(PwValuePtr self)
 {
     _PwBufferedFile* f = get_bfile_data_ptr(self);
 
@@ -804,13 +801,13 @@ static void stop_read_lines(PwValuePtr self)
     pw_destroy(&f->pushback);
 }
 
-static PwInterface_LineReader line_reader_interface = {
-    .start             = start_read_lines,
-    .read_line         = read_line,
-    .read_line_inplace = read_line_inplace,
-    .get_line_number   = get_line_number,
-    .unread_line       = unread_line,
-    .stop              = stop_read_lines
+static PwInterface_LineReader bfile_line_reader_interface = {
+    .start             = bfile_start_read_lines,
+    .read_line         = bfile_read_line,
+    .read_line_inplace = bfile_read_line_inplace,
+    .get_line_number   = bfile_get_line_number,
+    .unread_line       = bfile_unread_line,
+    .stop              = bfile_stop_read_lines
 };
 
 
@@ -957,7 +954,7 @@ void _pw_init_file()
             PwInterfaceId_BufferedFile, &bfile_buffered_file_interface,
             PwInterfaceId_Reader,       &bfile_reader_interface,
             PwInterfaceId_Writer,       &bfile_writer_interface,
-            PwInterfaceId_LineReader,   &line_reader_interface,
+            PwInterfaceId_LineReader,   &bfile_line_reader_interface,
             PwInterfaceId_Append,       &bfile_append_interface
         );
         buffered_file_type.dump = bfile_dump;
