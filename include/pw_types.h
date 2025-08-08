@@ -271,15 +271,6 @@ static_assert( offsetof(_PwValue, str_4) == 4 );
 static_assert( sizeof(_PwValue) == 16 );
 
 
-struct __PwStatusData {
-    unsigned refcount;
-    unsigned line_number;
-    char* file_name;
-    _PwValue description;  // string
-};
-typedef struct __PwStatusData _PwStatusData;
-
-
 struct __PwCompoundChain {
     /*
      * Compound values may contain cyclic references.

@@ -47,6 +47,19 @@ extern "C" {
 #define PW_ERROR_UNREAD_FAILED        27
 
 
+struct __PwStatusData {
+    /*
+     * This structure extends _PwStructData.
+     */
+    _PwStructData struct_data;
+
+    unsigned line_number;
+    char* file_name;
+    _PwValue description;  // string
+};
+typedef struct __PwStatusData _PwStatusData;
+
+
 uint16_t pw_define_status(char* status);
 /*
  * Define status in the global table.
