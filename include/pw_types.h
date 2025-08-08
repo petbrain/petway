@@ -111,13 +111,8 @@ typedef struct {
 typedef struct { uint8_t v[3]; } uint24_t;  // three bytes wide characters, always little-endian
 
 typedef struct {
-    union {
-        // the basic structure contains reference count only,
-        unsigned refcount;
-
-        // but we need to make sure it has correct size for proper alignmenf of subsequent structures
-        void* padding;
-    };
+    // the basic structure contains reference count only,
+    unsigned refcount;
 } _PwStructData;
 
 // make sure largest C type fits into 64 bits
@@ -343,8 +338,7 @@ typedef struct {
     [[ gnu::warn_unused_result ]]
     PwMethodEqual    equal;     // mandatory
 
-    // struct data offset and size
-    unsigned data_offset;
+    // size of data for struct and its subtypes
     unsigned data_size;
 
     /*
@@ -417,15 +411,14 @@ extern PwType** _pw_types;
  * All errors in this function are considered as critical and cause program abort.
  */
 
-[[nodiscard]] PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id,
-                                   unsigned data_size, unsigned alignment, ...);
+[[nodiscard]] PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id, unsigned data_size, ...);
 
 #define pw_subtype(type, name, ancestor_id, ...)  \
-    _pw_subtype((type), (name), (ancestor_id), 0, 0 __VA_OPT__(,) __VA_ARGS__, -1)
+    _pw_subtype((type), (name), (ancestor_id), 0 __VA_OPT__(,) __VA_ARGS__, -1)
 
 #define pw_struct_subtype(type, name, ancestor_id, data_type, ...)  \
     _pw_subtype((type), (name), (ancestor_id), \
-                sizeof(data_type), alignof(data_type) __VA_OPT__(,) __VA_ARGS__, -1)
+                sizeof(data_type) __VA_OPT__(,) __VA_ARGS__, -1)
 /*
  * `type` and `name` should point to a static storage.
  *
@@ -441,9 +434,7 @@ extern PwType** _pw_types;
  * Interfaces contain only methods to override, methods that do not need to be overriden
  * should be null pointers.
  *
- * The function initializes `type` with ancestor's type, calculates data_offset,
- * sets data_size and other essential fields, and then adds `type`
- * to the global list.
+ * The function initializes `type` and adds it to the global list.
  *
  * The caller may alter basic methods after calling this function.
  *
@@ -813,28 +804,6 @@ static inline bool pw_is_true(PwValuePtr value)
 [[nodiscard]] static inline bool pw_to_string(PwValuePtr value, PwValuePtr result)
 {
     return pw_typeof(value)->to_string(value, result);
-}
-
-/****************************************************************
- * API for struct types
- */
-
-[[nodiscard]] static inline void* _pw_get_data_ptr(PwValuePtr v, PwTypeId type_id)
-/*
- * Helper function to get pointer to struct data.
- * Typically used in macros like this:
- *
- * #define get_data_ptr(value)  ((MyType*) _pw_get_data_ptr((value), PwTypeId_MyType))
- */
-{
-    if (v->struct_data) {
-        PwType* t = _pw_types[type_id];
-        return (void*) (
-            ((uint8_t*) v->struct_data) + t->data_offset
-        );
-    } else {
-        return nullptr;
-    }
 }
 
 /****************************************************************

@@ -16,6 +16,11 @@ PwTypeId PwTypeId_File = 0;
 static PwType file_type;
 
 typedef struct {
+    /*
+     * This structure extends _PwStructData.
+     */
+    _PwStructData struct_data;
+
     _PwValue name;
     int  fd;              // file descriptor
     bool is_external_fd;  // fd is set by `set_fd`
@@ -24,7 +29,7 @@ typedef struct {
 
 } _PwFile;
 
-#define get_file_data_ptr(value)  ((_PwFile*) _pw_get_data_ptr((value), PwTypeId_File))
+#define get_file_data_ptr(value)  ((_PwFile*) ((value)->struct_data))
 
 
 // forward declaration
@@ -321,6 +326,11 @@ PwTypeId PwTypeId_BufferedFile = 0;
 static PwType buffered_file_type;
 
 typedef struct {
+    /*
+     * This structure extends _PwFile.
+     */
+    _PwFile file_data;
+
     uint8_t* read_buffer;
     unsigned read_buffer_size;  // size of read_buffer
     unsigned read_data_size;    // size of data in read_buffer
@@ -344,7 +354,7 @@ typedef struct {
 // forward declaration
 static void bfile_stop_read_lines(PwValuePtr self);
 
-#define get_bfile_data_ptr(value)  ((_PwBufferedFile*) _pw_get_data_ptr((value), PwTypeId_BufferedFile))
+#define get_bfile_data_ptr(value)  ((_PwBufferedFile*) ((value)->struct_data))
 
 [[nodiscard]] static bool bfile_init(PwValuePtr self, void* ctor_args)
 {

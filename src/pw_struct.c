@@ -38,8 +38,7 @@
 
     // allocate memory
 
-    unsigned memsize = type->data_offset + type->data_size;
-    self->struct_data = _pw_alloc(self->type_id, memsize, true);
+    self->struct_data = _pw_alloc(self->type_id, type->data_size, true);
     if (!self->struct_data) {
         return false;
     }
@@ -66,8 +65,7 @@ void _pw_struct_release(PwValuePtr self)
 
     type = pw_typeof(self);
 
-    unsigned memsize = type->data_offset + type->data_size;
-    _pw_free(self->type_id, (void**) &self->struct_data, memsize);
+    _pw_free(self->type_id, (void**) &self->struct_data, type->data_size);
 
     // reset value to Null
     self->type_id = PwTypeId_Null;
@@ -180,6 +178,5 @@ PwType _pw_struct_type = {
     .equal_sametype = _pw_struct_equal_sametype,
     .equal          = _pw_struct_equal,
 
-    .data_offset    = 0,
-    .data_size      = sizeof(_PwStructData),
+    .data_size      = sizeof(_PwStructData)
 };

@@ -29,6 +29,11 @@ struct _PwHashTable {
 };
 
 typedef struct {
+    /*
+     * This structure extends _PwCompoundData.
+     */
+    _PwCompoundData compound_data;
+
     _PwArray kv_pairs;        // key-value pairs in the insertion order
     struct _PwHashTable hash_table;
 } _PwMap;

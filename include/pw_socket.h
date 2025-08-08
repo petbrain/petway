@@ -34,12 +34,17 @@ extern PwTypeId PwTypeId_SockAddr;
 #define pw_assert_sockaddr(value)  pw_assert(pw_is_sockaddr(value))
 
 typedef struct {
+    /*
+     * This structure extends _PwStructData.
+     */
+    _PwStructData struct_data;
+
     struct sockaddr_storage addr;
     unsigned netmask;  // netmask in CIDR notation, i.e. number of network bits;
                        // nonzero for subnet address, zero for host address
 } _PwSockAddrData;
 
-#define _pw_sockaddr_data_ptr(value)  ((_PwSockAddrData*) _pw_get_data_ptr((value), PwTypeId_SockAddr))
+#define _pw_sockaddr_data_ptr(value)  ((_PwSockAddrData*) ((value)->struct_data))
 
 // helper functions
 
@@ -197,6 +202,11 @@ typedef struct {
 // socket data
 
 typedef struct {
+    /*
+     * This structure extends _PwStructData.
+     */
+    _PwStructData struct_data;
+
     int sock;
     int listen_backlog;  // 0: not listening
 
@@ -210,7 +220,7 @@ typedef struct {
 
 } _PwSocketData;
 
-#define _pw_socket_data_ptr(value)  ((_PwSocketData*) _pw_get_data_ptr((value), PwTypeId_Socket))
+#define _pw_socket_data_ptr(value)  ((_PwSocketData*) ((value)->struct_data))
 
 
 /****************************************************************

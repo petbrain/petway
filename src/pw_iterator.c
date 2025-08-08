@@ -81,12 +81,8 @@ PwType _pw_iterator_type = {
     .equal_sametype = iterator_equal_sametype,
     .equal          = iterator_equal,
 
-    .data_offset    = sizeof(_PwStructData),
     .data_size      = sizeof(_PwIterator),
 
     .init           = iterator_init,
     .fini           = iterator_fini
 };
-
-// make sure _PwStructData has correct padding
-static_assert((sizeof(_PwStructData) & (alignof(_PwIterator) - 1)) == 0);

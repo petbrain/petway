@@ -3,6 +3,11 @@
 #include "src/string/pw_string_internal.h"
 
 typedef struct {
+    /*
+     * This structure extends _PwStructData.
+     */
+    _PwStructData struct_data;
+
     // line reader iterator data
     _PwValue line;
     _PwValue pushback;
@@ -10,7 +15,7 @@ typedef struct {
     unsigned line_position;
 } _PwStringIO;
 
-#define get_data_ptr(value)  ((_PwStringIO*) _pw_get_data_ptr((value), PwTypeId_StringIO))
+#define get_data_ptr(value)  ((_PwStringIO*) ((value)->struct_data))
 
 // forward declaration
 [[nodiscard]] static bool read_line_inplace(PwValuePtr self, PwValuePtr line);

@@ -29,7 +29,7 @@ struct __PwCompoundData;
 typedef struct __PwCompoundData _PwCompoundData;
 struct __PwCompoundData {
     /*
-     * We need reference count, so we embed struct data.
+     * This structure extends _PwStructData.
      */
     _PwStructData struct_data;
 

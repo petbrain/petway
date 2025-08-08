@@ -154,7 +154,6 @@ PwType _pw_array_type = {
     .equal_sametype = array_equal_sametype,
     .equal          = array_equal,
 
-    .data_offset    = sizeof(_PwCompoundData),
     .data_size      = sizeof(_PwArray),
 
     .init           = array_init,
@@ -163,9 +162,6 @@ PwType _pw_array_type = {
     .num_interfaces = PW_LENGTH(array_interfaces),
     .interfaces     = array_interfaces
 };
-
-// make sure _PwCompoundData has correct padding
-static_assert((sizeof(_PwCompoundData) & (alignof(_PwArray) - 1)) == 0);
 
 
 static unsigned round_capacity(unsigned capacity)

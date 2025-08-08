@@ -408,7 +408,6 @@ PwType _pw_compound_type = {
     .equal_sametype = _pw_struct_equal_sametype,
     .equal          = compound_equal,
 
-    .data_offset    = 0,
     .data_size      = sizeof(_PwCompoundData),
 
     .fini           = compound_fini

@@ -353,11 +353,7 @@ PwType _pw_status_type = {
     .equal_sametype = status_equal_sametype,
     .equal          = status_equal,
 
-    .data_offset    = sizeof(_PwStructData),
     .data_size      = sizeof(_PwStatusData),
 
     .fini           = status_fini
 };
-
-// make sure _PwStructData has correct padding
-static_assert((sizeof(_PwStructData) & (alignof(_PwStatusData) - 1)) == 0);

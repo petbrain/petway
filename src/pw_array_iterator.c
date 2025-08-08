@@ -5,13 +5,18 @@
 #include "src/pw_struct_internal.h"
 
 typedef struct {
+    /*
+     * This structure extends _PwStructData.
+     */
+    _PwStructData struct_data;
+
     _PwArray* array;  // cached pointer to array structure, also indicates that iteration is in progress
     unsigned index;
     int increment;
     unsigned line_number;  // does not match index because line reader may skip non-strings
 } _PwArrayIterator;
 
-#define get_array_iterator_ptr(value)  ((_PwArrayIterator*) _pw_get_data_ptr((value), PwTypeId_ArrayIterator))
+#define get_array_iterator_ptr(value)  ((_PwArrayIterator*) ((value)->struct_data))
 
 [[nodiscard]] static bool start_iteration(PwValuePtr self)
 {

@@ -6,7 +6,7 @@
 #include "src/pw_map_internal.h"
 #include "src/pw_struct_internal.h"
 
-#define get_data_ptr(value)  _pw_get_data_ptr((value), PwTypeId_Map)
+#define get_data_ptr(value)  ((_PwMap*) ((value)->struct_data))
 
 [[nodiscard]] bool _pw_map_va(PwValuePtr result, ...)
 {
@@ -518,7 +518,6 @@ PwType _pw_map_type = {
     .equal_sametype = map_equal_sametype,
     .equal          = map_equal,
 
-    .data_offset    = sizeof(_PwCompoundData),
     .data_size      = sizeof(_PwMap),
 
     .init           = map_init,
@@ -527,9 +526,6 @@ PwType _pw_map_type = {
     .num_interfaces = PW_LENGTH(map_interfaces),
     .interfaces     = map_interfaces
 };
-
-// make sure _PwCompoundData has correct padding
-static_assert((sizeof(_PwCompoundData) & (alignof(_PwMap) - 1)) == 0);
 
 
 /****************************************************************

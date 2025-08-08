@@ -16,13 +16,18 @@ extern "C" {
 #define PWARRAY_CAPACITY_INCREMENT  16
 
 typedef struct {
+    /*
+     * This structure extends _PwCompoundData.
+     */
+    _PwCompoundData compound_data;
+
     PwValuePtr items;
     unsigned length;
     unsigned capacity;
     unsigned itercount;  // number of iterations in progress
 } _PwArray;
 
-#define get_array_struct_ptr(value)  ((_PwArray*) _pw_get_data_ptr((value), PwTypeId_Array))
+#define get_array_struct_ptr(value)  ((_PwArray*) ((value)->struct_data))
 
 extern PwType _pw_array_type;
 

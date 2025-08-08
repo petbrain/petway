@@ -848,8 +848,7 @@ PwTypeId _pw_add_type(PwType* type, ...)
     return type_id;
 }
 
-PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id,
-                     unsigned data_size, unsigned alignment, ...)
+PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id, unsigned data_size, ...)
 {
     // the order constructor are called is undefined, make sure the type system is initialized
     _pw_init_types();
@@ -864,7 +863,6 @@ PwTypeId _pw_subtype(PwType* type, char* name, PwTypeId ancestor_id,
 
     type->ancestor_id = ancestor_id;
     type->name = name;
-    type->data_offset = align_unsigned(ancestor->data_offset + ancestor->data_size, alignment);
     type->data_size = data_size;
 
     PwTypeId type_id = add_type(type);
