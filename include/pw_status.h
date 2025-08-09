@@ -125,6 +125,8 @@ static inline bool pw_is_va_end(PwValuePtr status)
         __VA_OPT__( _pw_set_status_desc(&current_task->status, __VA_ARGS__); )  \
     } while (false)
 
+#define pw_set_status_desc(...)  \
+    _pw_set_status_desc(&current_task->status, __VA_ARGS__)
 
 void _pw_set_status_location(PwValuePtr status, char* file_name, unsigned line_number);
 void _pw_set_status_desc(PwValuePtr status, char* fmt, ...);
