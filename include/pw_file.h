@@ -18,6 +18,22 @@ extern "C" {
  *  - Writer
  */
 
+typedef struct {
+    /*
+     * This structure extends _PwStructData.
+     */
+    _PwStructData struct_data;
+
+    _PwValue name;
+    int  fd;              // file descriptor
+    bool is_external_fd;  // fd is set by `set_fd`
+    bool own_fd;          // fd is owned, If not owned, it is not closed by `close`
+    int  error;           // errno, set by `open`
+
+} _PwFile;
+
+#define get_file_data_ptr(value)  ((_PwFile*) ((value)->struct_data))
+
 extern PwTypeId PwTypeId_File;
 
 #define pw_is_file(value)      pw_is_subtype((value), PwTypeId_File)
@@ -39,6 +55,32 @@ extern PwTypeId PwTypeId_File;
  * This means nested iterations aren't possible but they do not make
  * sense for files either.
  */
+
+typedef struct {
+    /*
+     * This structure extends _PwFile.
+     */
+    _PwFile file_data;
+
+    uint8_t* read_buffer;
+    unsigned read_buffer_size;  // size of read_buffer
+    unsigned read_data_size;    // size of data in read_buffer
+    unsigned read_position;     // current position in read_buffer
+
+    uint8_t* write_buffer;
+    unsigned write_buffer_size; // size of write_buffer
+    unsigned write_position;    // current position in write_buffer, also it's the size of data
+
+    // line reader data
+    char8_t  partial_utf8[8];   // UTF-8 sequence may span adjacent reads, the buffer size is for surrogate pair
+    unsigned partial_utf8_len;
+    _PwValue pushback;          // for unread_line
+
+    // line reader iterator data
+    bool     iterating;         // indicates that iteration is in progress
+    unsigned line_number;
+
+} _PwBufferedFile;
 
 extern PwTypeId PwTypeId_BufferedFile;
 

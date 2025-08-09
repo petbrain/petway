@@ -15,26 +15,8 @@ PwTypeId PwTypeId_File = 0;
 
 static PwType file_type;
 
-typedef struct {
-    /*
-     * This structure extends _PwStructData.
-     */
-    _PwStructData struct_data;
-
-    _PwValue name;
-    int  fd;              // file descriptor
-    bool is_external_fd;  // fd is set by `set_fd`
-    bool own_fd;          // fd is owned, If not owned, it is not closed by `close`
-    int  error;           // errno, set by `open`
-
-} _PwFile;
-
-#define get_file_data_ptr(value)  ((_PwFile*) ((value)->struct_data))
-
-
 // forward declaration
 [[nodiscard]] static bool file_close(PwValuePtr self);
-
 
 [[nodiscard]] static bool file_init(PwValuePtr self, void* ctor_args)
 {
@@ -324,32 +306,6 @@ static PwInterface_Writer file_writer_interface = {
 PwTypeId PwTypeId_BufferedFile = 0;
 
 static PwType buffered_file_type;
-
-typedef struct {
-    /*
-     * This structure extends _PwFile.
-     */
-    _PwFile file_data;
-
-    uint8_t* read_buffer;
-    unsigned read_buffer_size;  // size of read_buffer
-    unsigned read_data_size;    // size of data in read_buffer
-    unsigned read_position;     // current position in read_buffer
-
-    uint8_t* write_buffer;
-    unsigned write_buffer_size; // size of write_buffer
-    unsigned write_position;    // current position in write_buffer, also it's the size of data
-
-    // line reader data
-    char8_t  partial_utf8[8];   // UTF-8 sequence may span adjacent reads, the buffer size is for surrogate pair
-    unsigned partial_utf8_len;
-    _PwValue pushback;          // for unread_line
-
-    // line reader iterator data
-    bool     iterating;         // indicates that iteration is in progress
-    unsigned line_number;
-
-} _PwBufferedFile;
 
 // forward declaration
 static void bfile_stop_read_lines(PwValuePtr self);
