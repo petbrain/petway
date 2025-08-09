@@ -243,7 +243,7 @@ static void socket_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
 
     // dump
 
-    fprintf(fp, " socket(%s, %s, %s)%s\n", domain, type, protocol, listening);
+    fprintf(fp, " socket(%s, %s, %s) fd=%d%s\n", domain, type, protocol, sd->sock, listening);
 
     if (pw_is_sockaddr(&sd->local_addr)) {
         fputs("Local address:", fp);
