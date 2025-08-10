@@ -235,9 +235,9 @@ static void socket_dump(PwValuePtr self, FILE* fp, int first_indent, int next_in
     // listen backlog to string
 
     char* listening = "";
-    char listening_buf[40];
+    char listening_buf[128];
     if (sd->listen_backlog) {
-        snprintf(listening_buf, sizeof(listening_buf), ", listening (backlog=%d)", sd->listen_backlog);
+        snprintf(listening_buf, sizeof(listening_buf), ", listening (backlog=%d, new_type=%u)", sd->listen_backlog, sd->new_sock_type);
         listening = listening_buf;
     }
 
@@ -373,31 +373,34 @@ unsigned PwInterfaceId_Socket = 0;
     }
 }
 
-[[nodiscard]] static bool socket_listen(PwValuePtr self, int backlog)
+[[nodiscard]] static bool socket_listen(PwValuePtr self, int backlog, PwTypeId new_sock_type)
 {
     _PwSocketData* sd = _pw_socket_data_ptr(self);
 
     if (backlog == 0) {
         backlog = 5;
     }
-    if (listen(sd->sock, backlog) == 0) {
-        sd->listen_backlog = backlog;
-        return true;
-    } else {
+    if (new_sock_type == PwTypeId_Null) {
+        new_sock_type = self->type_id;
+    }
+    if (listen(sd->sock, backlog) == -1) {
         pw_set_status(PwErrno(errno));
         return false;
     }
+    sd->listen_backlog = backlog;
+    sd->new_sock_type = new_sock_type;
+    return true;
 }
 
 [[nodiscard]] static bool socket_accept(PwValuePtr self, PwValuePtr result)
 {
+    _PwSocketData* sd_lsnr = _pw_socket_data_ptr(self);
+
     // create uninitialized socket
-    if (!pw_create(self->type_id, result)) {
+    if (!pw_create(sd_lsnr->new_sock_type, result)) {
         return false;
     }
 
-    // get pointers to socket data structures
-    _PwSocketData* sd_lsnr = _pw_socket_data_ptr(self);
     _PwSocketData* sd_new  = _pw_socket_data_ptr(result);
 
     // initialize addresses for new socket

@@ -132,11 +132,14 @@ typedef struct {
      * Set/reset nonblocking mode for socket.
      */
 
-    [[ gnu::warn_unused_result ]] bool (*listen)(PwValuePtr self, int backlog);
+    [[ gnu::warn_unused_result ]] bool (*listen)(PwValuePtr self, int backlog, PwTypeId new_sock_type);
     /*
      * Call `listen`, set listen_backlog
      *
      * If backlog is 0, it is set to 5.
+     *
+     * `new_sock_type` is the type of socket created for incoming connections.
+     * If it is PwTypeId_Null, use the type of listening socket.
      */
 
     [[ gnu::warn_unused_result ]] bool (*accept)(PwValuePtr self, PwValuePtr result);
@@ -209,6 +212,7 @@ typedef struct {
 
     int sock;
     int listen_backlog;  // 0: not listening
+    PwTypeId new_sock_type;  // for accept, to create socket of desired type
 
     // args socket() was called with
     int domain;
@@ -252,9 +256,9 @@ typedef struct {
     return pw_interface(sock->type_id, Socket)->set_nonblocking(sock, mode);
 }
 
-[[nodiscard]] static inline bool pw_socket_listen(PwValuePtr sock, int backlog)
+[[nodiscard]] static inline bool pw_socket_listen(PwValuePtr sock, int backlog, PwTypeId new_sock_type)
 {
-    return pw_interface(sock->type_id, Socket)->listen(sock, backlog);
+    return pw_interface(sock->type_id, Socket)->listen(sock, backlog, new_sock_type);
 }
 
 [[nodiscard]] static inline bool pw_socket_accept(PwValuePtr sock, PwValuePtr result)
