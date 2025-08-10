@@ -617,7 +617,7 @@ static PwType datetime_type = {
 {
     // XXX use ctor_args for initializer?
     pw_destroy(result);
-    *result = PwTimestamp();
+    *result = PwTimestamp(0, 0);
     return true;
 }
 

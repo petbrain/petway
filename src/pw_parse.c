@@ -477,7 +477,7 @@ bad_datetime:
                                        char32_t* allowed_terminators, PwValuePtr result)
 {
     pw_destroy(result);
-    *result = PwTimestamp();
+    *result = PwTimestamp(0, 0);
 
     unsigned pos;
     PwValue seconds = PW_NULL;

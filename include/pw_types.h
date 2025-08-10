@@ -244,7 +244,7 @@ union __PwValue {
     struct {
         // timestamp
         PwTypeId /* uint16_t */ _timestamp_type_id;
-        uint16_t _timestamp_padding;
+        uint16_t ts_userdata;     // for arbitrary use
         uint32_t ts_nanoseconds;
         uint64_t ts_seconds;
     };
@@ -642,16 +642,18 @@ void pw_dump_types(FILE* fp);
         v;  \
     })
 
-#define PW_TIMESTAMP  \
+#define PW_TIMESTAMP(seconds, nanoseconds)  \
     {  \
-        ._timestamp_type_id = PwTypeId_Timestamp  \
+        ._timestamp_type_id = PwTypeId_Timestamp,  \
+        .ts_seconds = (seconds),  \
+        .ts_nanoseconds = (nanoseconds),  \
     }
 
-#define PwTimestamp()  \
+#define PwTimestamp(seconds, nanoseconds)  \
     /* make Timestamp rvalue */  \
     __extension__ \
     ({  \
-        _PwValue v = PW_TIMESTAMP;  \
+        _PwValue v = PW_TIMESTAMP((seconds), (nanoseconds));  \
         v;  \
     })
 

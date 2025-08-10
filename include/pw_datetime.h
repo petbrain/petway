@@ -21,6 +21,14 @@ extern "C" {
  * Calculate  a - b
  */
 
+[[nodiscard]] int pw_timestamp_cmp(PwValuePtr a, PwValuePtr b);
+/*
+ * Return:
+ *  -1 if a < b
+ *   0 if a == b
+ *   1 if a > b
+ */
+
 #ifdef __cplusplus
 }
 #endif

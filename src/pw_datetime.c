@@ -21,10 +21,10 @@
     pw_assert_timestamp(a);
     pw_assert_timestamp(b);
 
-    _PwValue sum = PW_TIMESTAMP;
-
-    sum.ts_seconds = a->ts_seconds + b->ts_seconds;
-    sum.ts_nanoseconds = a->ts_nanoseconds - b->ts_nanoseconds;
+    _PwValue sum = PW_TIMESTAMP(
+        a->ts_seconds + b->ts_seconds,
+        a->ts_nanoseconds + b->ts_nanoseconds
+    );
     if (sum.ts_nanoseconds >= 1000'000'000UL) {
         sum.ts_nanoseconds -= 1000'000'000UL;
         sum.ts_seconds++;
@@ -37,13 +37,33 @@
     pw_assert_timestamp(a);
     pw_assert_timestamp(b);
 
-    _PwValue diff = PW_TIMESTAMP;
-
-    diff.ts_seconds = a->ts_seconds - b->ts_seconds;
-    diff.ts_nanoseconds = a->ts_nanoseconds - b->ts_nanoseconds;
+    _PwValue diff = PW_TIMESTAMP(
+        a->ts_seconds - b->ts_seconds,
+        a->ts_nanoseconds - b->ts_nanoseconds
+    );
     if (a->ts_nanoseconds < b->ts_nanoseconds) {
         diff.ts_seconds--;
         diff.ts_nanoseconds += 1000'000'000UL;
     }
     return diff;
+}
+
+[[nodiscard]] int pw_timestamp_cmp(PwValuePtr a, PwValuePtr b)
+{
+    pw_assert_timestamp(a);
+    pw_assert_timestamp(b);
+
+    if (a->ts_seconds < b->ts_seconds) {
+        return -1;
+    }
+    if (a->ts_seconds > b->ts_seconds) {
+        return 1;
+    }
+    if (a->ts_nanoseconds < b->ts_nanoseconds) {
+        return -1;
+    }
+    if (a->ts_nanoseconds > b->ts_nanoseconds) {
+        return 1;
+    }
+    return 0;
 }
