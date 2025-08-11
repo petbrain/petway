@@ -218,17 +218,17 @@ static void status_hash(PwValuePtr self, PwHashContext* ctx)
     if (!status) {
         pw_destroy(result);
         *result = PwString("(null)");
-        return false;
+        return true;
     }
     if (!pw_is_status(status)) {
         pw_destroy(result);
         *result = PwString("(not status)");
-        return false;
+        return true;
     }
     if (!status->is_error) {
         pw_destroy(result);
         *result = PwString("Success");
-        return false;
+        return true;
     }
     char* status_str = pw_status_str(status->status_code);
     char* file_name;
